@@ -25,6 +25,7 @@ update:
 	go mod tidy
 
 setup:
+	brew install nlopt-static || sudo apt install -y libnlopt-dev
 	go mod tidy
 
 .PHONY: lint test update setup

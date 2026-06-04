@@ -18,6 +18,8 @@ jobs:
       - uses: actions/setup-go@v4
         with:
           go-version: '1.26'
+      - name: Setup
+        run: make setup
       - name: Vet
         run: go vet ./...
       - name: Test
