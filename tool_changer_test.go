@@ -127,13 +127,6 @@ func TestDoCommand_UnknownKey(t *testing.T) {
 	test.That(t, err.Error(), test.ShouldContainSubstring, "unknown command")
 }
 
-func TestDoCommand_GetWorldState_Empty(t *testing.T) {
-	s := newTestService()
-	res, err := s.DoCommand(context.Background(), map[string]interface{}{"get_world_state": true})
-	test.That(t, err, test.ShouldBeNil)
-	test.That(t, res["set"], test.ShouldEqual, false)
-}
-
 func TestDoCommand_SetWorldState_Valid(t *testing.T) {
 	s := newTestService()
 	// Empty WorldState object decodes to a valid (empty) state.
@@ -143,10 +136,7 @@ func TestDoCommand_SetWorldState_Valid(t *testing.T) {
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, res["success"], test.ShouldEqual, true)
 	test.That(t, res["set"], test.ShouldEqual, true)
-
-	res, err = s.DoCommand(context.Background(), map[string]interface{}{"get_world_state": true})
-	test.That(t, err, test.ShouldBeNil)
-	test.That(t, res["set"], test.ShouldEqual, true)
+	test.That(t, s.worldState, test.ShouldNotBeNil)
 }
 
 func TestDoCommand_SetWorldState_Clear(t *testing.T) {
@@ -155,14 +145,12 @@ func TestDoCommand_SetWorldState_Clear(t *testing.T) {
 		"set_world_state": map[string]interface{}{},
 	})
 	test.That(t, err, test.ShouldBeNil)
+	test.That(t, s.worldState, test.ShouldNotBeNil)
 
 	res, err := s.DoCommand(context.Background(), map[string]interface{}{"set_world_state": nil})
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, res["set"], test.ShouldEqual, false)
-
-	res, err = s.DoCommand(context.Background(), map[string]interface{}{"get_world_state": true})
-	test.That(t, err, test.ShouldBeNil)
-	test.That(t, res["set"], test.ShouldEqual, false)
+	test.That(t, s.worldState, test.ShouldBeNil)
 }
 
 func TestDoCommand_SetWorldState_Malformed(t *testing.T) {

@@ -141,13 +141,10 @@ func (s *toolChanger) DoCommand(ctx context.Context, cmd map[string]interface{})
 	if v, ok := cmd["set_world_state"]; ok {
 		return s.doSetWorldState(v)
 	}
-	if _, ok := cmd["get_world_state"]; ok {
-		return s.doGetWorldState(), nil
-	}
 	if _, ok := cmd["park"]; ok {
 		return s.doPark(ctx)
 	}
-	return nil, fmt.Errorf("unknown command, expected 'get_current_tool', 'set_current_tool', 'set_world_state', 'get_world_state', or 'park'")
+	return nil, fmt.Errorf("unknown command, expected 'get_current_tool', 'set_current_tool', 'set_world_state', or 'park'")
 }
 
 func (s *toolChanger) doGetCurrentTool() map[string]interface{} {
@@ -202,12 +199,6 @@ func (s *toolChanger) doSetWorldState(v interface{}) (map[string]interface{}, er
 	s.worldState = ws
 	s.mu.Unlock()
 	return map[string]interface{}{"success": true, "set": true}, nil
-}
-
-func (s *toolChanger) doGetWorldState() map[string]interface{} {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return map[string]interface{}{"set": s.worldState != nil}
 }
 
 func (s *toolChanger) doPark(ctx context.Context) (map[string]interface{}, error) {
