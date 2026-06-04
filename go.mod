@@ -2,7 +2,11 @@ module github.com/viam-labs/tool-changer
 
 go 1.26.0
 
-require go.viam.com/rdk v0.127.1-0.20260520181737-0db644d874da
+require (
+	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
+	go.viam.com/rdk v0.127.1-0.20260520181737-0db644d874da
+	go.viam.com/test v1.2.4
+)
 
 require (
 	cloud.google.com/go v0.115.1 // indirect
@@ -73,7 +77,6 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
-	github.com/golang/geo v0.0.0-20230421003525-6adc56603217 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
@@ -170,7 +173,6 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	go.viam.com/api v0.1.552 // indirect
-	go.viam.com/test v1.2.4 // indirect
 	go.viam.com/utils v0.6.1 // indirect
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20230525183740-e7c30c78aeb2 // indirect
 	golang.org/x/crypto v0.47.0 // indirect
