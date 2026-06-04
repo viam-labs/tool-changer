@@ -132,47 +132,10 @@ func (s *toolChanger) Status(ctx context.Context) (map[string]interface{}, error
 }
 
 func (s *toolChanger) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
-	if _, ok := cmd["get_current_tool"]; ok {
-		return s.doGetCurrentTool(), nil
-	}
-	if v, ok := cmd["set_current_tool"]; ok {
-		return s.doSetCurrentTool(v)
-	}
 	if v, ok := cmd["set_world_state"]; ok {
 		return s.doSetWorldState(v)
 	}
-	if _, ok := cmd["park"]; ok {
-		return s.doPark(ctx)
-	}
-	return nil, fmt.Errorf("unknown command, expected 'get_current_tool', 'set_current_tool', 'set_world_state', or 'park'")
-}
-
-func (s *toolChanger) doGetCurrentTool() map[string]interface{} {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.currentTool == nil {
-		return map[string]interface{}{"tool": nil}
-	}
-	return map[string]interface{}{"tool": *s.currentTool}
-}
-
-func (s *toolChanger) doSetCurrentTool(v interface{}) (map[string]interface{}, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if v == nil {
-		s.currentTool = nil
-		return map[string]interface{}{"success": true, "tool": nil}, nil
-	}
-	name, ok := v.(string)
-	if !ok {
-		return nil, fmt.Errorf("set_current_tool: value must be a string or null, got %T", v)
-	}
-	if !s.knownTool(name) {
-		return nil, fmt.Errorf("unknown tool %q", name)
-	}
-	s.currentTool = &name
-	return map[string]interface{}{"success": true, "tool": name}, nil
+	return nil, fmt.Errorf("unknown command, expected 'set_world_state'")
 }
 
 func (s *toolChanger) knownTool(name string) bool {
@@ -199,21 +162,6 @@ func (s *toolChanger) doSetWorldState(v interface{}) (map[string]interface{}, er
 	s.worldState = ws
 	s.mu.Unlock()
 	return map[string]interface{}{"success": true, "set": true}, nil
-}
-
-func (s *toolChanger) doPark(ctx context.Context) (map[string]interface{}, error) {
-	s.mu.Lock()
-	ws := s.worldState
-	s.mu.Unlock()
-
-	traj, err := s.plan(ctx, s.cfg.ParkingPose, ws)
-	if err != nil {
-		return nil, fmt.Errorf("park: %w", err)
-	}
-	if err := s.execute(ctx, traj); err != nil {
-		return nil, fmt.Errorf("park: %w", err)
-	}
-	return nil, nil
 }
 
 func (s *toolChanger) Close(ctx context.Context) error {
