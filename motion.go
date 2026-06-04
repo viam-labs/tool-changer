@@ -62,11 +62,11 @@ func (s *toolChanger) execute(ctx context.Context, traj motionplan.Trajectory) e
 	return s.arm.MoveThroughJointPositions(ctx, armInputs, nil, nil)
 }
 
-func worldStateFromCommand(cmd map[string]interface{}) (*referenceframe.WorldState, error) {
-	raw, ok := cmd["world-state"]
-	if !ok || raw == nil {
-		return nil, nil
-	}
+// TODO: if motion commands ever need to override the stored world-state for a
+// single call (e.g. a transient obstacle the caller doesn't want to keep), add
+// an optional per-call world-state field that merges with or replaces stored.
+// The current set-once contract stays backwards compatible.
+func parseWorldState(raw interface{}) (*referenceframe.WorldState, error) {
 	bytes, err := json.Marshal(raw)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling world-state: %w", err)

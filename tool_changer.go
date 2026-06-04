@@ -9,6 +9,7 @@ import (
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/motionplan"
+	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot/framesystem"
 	genericservice "go.viam.com/rdk/services/generic"
@@ -94,6 +95,7 @@ type toolChanger struct {
 
 	mu          sync.Mutex
 	currentTool *string
+	worldState  *referenceframe.WorldState
 }
 
 func newToolChanger(ctx context.Context, deps resource.Dependencies, rawConf resource.Config, logger logging.Logger) (resource.Resource, error) {
@@ -136,10 +138,16 @@ func (s *toolChanger) DoCommand(ctx context.Context, cmd map[string]interface{})
 	if v, ok := cmd["set_current_tool"]; ok {
 		return s.doSetCurrentTool(v)
 	}
-	if _, ok := cmd["park"]; ok {
-		return s.doPark(ctx, cmd)
+	if v, ok := cmd["set_world_state"]; ok {
+		return s.doSetWorldState(v)
 	}
-	return nil, fmt.Errorf("unknown command, expected 'get_current_tool', 'set_current_tool', or 'park'")
+	if _, ok := cmd["get_world_state"]; ok {
+		return s.doGetWorldState(), nil
+	}
+	if _, ok := cmd["park"]; ok {
+		return s.doPark(ctx)
+	}
+	return nil, fmt.Errorf("unknown command, expected 'get_current_tool', 'set_current_tool', 'set_world_state', 'get_world_state', or 'park'")
 }
 
 func (s *toolChanger) doGetCurrentTool() map[string]interface{} {
@@ -179,12 +187,35 @@ func (s *toolChanger) knownTool(name string) bool {
 	return false
 }
 
-func (s *toolChanger) doPark(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
-	worldState, err := worldStateFromCommand(cmd)
-	if err != nil {
-		return nil, fmt.Errorf("park: %w", err)
+func (s *toolChanger) doSetWorldState(v interface{}) (map[string]interface{}, error) {
+	if v == nil {
+		s.mu.Lock()
+		s.worldState = nil
+		s.mu.Unlock()
+		return map[string]interface{}{"success": true, "set": false}, nil
 	}
-	traj, err := s.plan(ctx, s.cfg.ParkingPose, worldState)
+	ws, err := parseWorldState(v)
+	if err != nil {
+		return nil, fmt.Errorf("set_world_state: %w", err)
+	}
+	s.mu.Lock()
+	s.worldState = ws
+	s.mu.Unlock()
+	return map[string]interface{}{"success": true, "set": true}, nil
+}
+
+func (s *toolChanger) doGetWorldState() map[string]interface{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return map[string]interface{}{"set": s.worldState != nil}
+}
+
+func (s *toolChanger) doPark(ctx context.Context) (map[string]interface{}, error) {
+	s.mu.Lock()
+	ws := s.worldState
+	s.mu.Unlock()
+
+	traj, err := s.plan(ctx, s.cfg.ParkingPose, ws)
 	if err != nil {
 		return nil, fmt.Errorf("park: %w", err)
 	}
