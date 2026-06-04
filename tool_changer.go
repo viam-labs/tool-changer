@@ -163,7 +163,10 @@ func (s *toolChanger) findTool(name string) ToolConfig {
 	return ToolConfig{}
 }
 
-func (s *toolChanger) rackVisitSteps(tool ToolConfig) []step {
+// rackVisitSteps returns the motion steps for a single rack visit, assuming
+// the arm starts at parking-pose. Callers prepend a to-parking step once at
+// the start of the overall sequence to bring the arm in from the work area.
+func (s *toolChanger) rackVisitSteps(tool ToolConfig) []PlanStep {
 	approach := Pose{
 		Point: r3.Vector{
 			X: tool.SlotPose.Point.X + tool.ApproachOffsetMM.X,
@@ -172,13 +175,16 @@ func (s *toolChanger) rackVisitSteps(tool ToolConfig) []step {
 		},
 		Orientation: tool.SlotPose.Orientation,
 	}
-	return []step{
-		{name: "to-parking", goal: s.cfg.ParkingPose, constraints: nil},
-		{name: "approach-" + tool.Name, goal: approach, constraints: s.cfg.ApproachConstraints},
-		{name: "dock-" + tool.Name, goal: tool.SlotPose, constraints: s.cfg.DockConstraints},
-		{name: "retract-" + tool.Name, goal: approach, constraints: s.cfg.DockConstraints},
-		{name: "depart-" + tool.Name, goal: s.cfg.ParkingPose, constraints: s.cfg.ApproachConstraints},
+	return []PlanStep{
+		{Type: ApproachStepType, ToolName: tool.Name, Goal: approach, Constraints: s.cfg.ApproachConstraints},
+		{Type: DockStepType, ToolName: tool.Name, Goal: tool.SlotPose, Constraints: s.cfg.DockConstraints},
+		{Type: RetractStepType, ToolName: tool.Name, Goal: approach, Constraints: s.cfg.DockConstraints},
+		{Type: DepartStepType, ToolName: tool.Name, Goal: s.cfg.ParkingPose, Constraints: s.cfg.ApproachConstraints},
 	}
+}
+
+func (s *toolChanger) toParkingStep() PlanStep {
+	return PlanStep{Type: ToParkingStepType, Goal: s.cfg.ParkingPose}
 }
 
 func (s *toolChanger) doSetWorldState(v interface{}) (map[string]interface{}, error) {
@@ -212,11 +218,12 @@ func (s *toolChanger) doRelease(ctx context.Context) (map[string]interface{}, er
 	defer s.motionMu.Unlock()
 
 	tool := s.findTool(*cur)
-	trajectories, err := s.planAll(ctx, s.rackVisitSteps(tool), ws)
+	steps := append([]PlanStep{s.toParkingStep()}, s.rackVisitSteps(tool)...)
+	plan, err := s.plan(ctx, steps, ws)
 	if err != nil {
 		return nil, fmt.Errorf("release: %w", err)
 	}
-	if err := s.executeAll(ctx, trajectories); err != nil {
+	if err := s.execute(ctx, plan); err != nil {
 		return nil, fmt.Errorf("release: %w", err)
 	}
 
@@ -258,17 +265,17 @@ func (s *toolChanger) doSwitchTool(ctx context.Context, v interface{}) (map[stri
 	s.motionMu.Lock()
 	defer s.motionMu.Unlock()
 
-	var steps []step
+	steps := []PlanStep{s.toParkingStep()}
 	if cur != nil {
 		steps = append(steps, s.rackVisitSteps(s.findTool(*cur))...)
 	}
 	steps = append(steps, s.rackVisitSteps(s.findTool(name))...)
 
-	trajectories, err := s.planAll(ctx, steps, ws)
+	plan, err := s.plan(ctx, steps, ws)
 	if err != nil {
 		return nil, fmt.Errorf("switch_tool: %w", err)
 	}
-	if err := s.executeAll(ctx, trajectories); err != nil {
+	if err := s.execute(ctx, plan); err != nil {
 		return nil, fmt.Errorf("switch_tool: %w", err)
 	}
 

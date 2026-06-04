@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	commonpb "go.viam.com/api/common/v1"
 	"go.viam.com/rdk/motionplan"
@@ -14,17 +15,47 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-type step struct {
-	name        string
-	goal        Pose
-	constraints *motionplan.Constraints
+const (
+	ToParkingStepType = "ToParking"
+	ApproachStepType  = "Approach"
+	DockStepType      = "Dock"
+	RetractStepType   = "Retract"
+	DepartStepType    = "Depart"
+)
+
+const (
+	PlannedStatus         = "Planned"
+	ExecutedStatus        = "Executed"
+	FailedToExecuteStatus = "FailedToExecute"
+)
+
+type PlanStep struct {
+	Type         string                  `json:"type"`
+	ToolName     string                  `json:"tool_name,omitempty"`
+	Goal         Pose                    `json:"goal"`
+	Constraints  *motionplan.Constraints `json:"constraints,omitempty"`
+	Trajectory   motionplan.Trajectory   `json:"trajectory,omitempty"`
+	Status       string                  `json:"status"`
+	PlanningTime time.Duration           `json:"planning_time"`
 }
 
-func (s *toolChanger) planAll(
+type Plan struct {
+	Steps             []PlanStep    `json:"steps"`
+	TotalPlanningTime time.Duration `json:"total_planning_time"`
+}
+
+func stepLabel(st PlanStep) string {
+	if st.ToolName == "" {
+		return st.Type
+	}
+	return st.Type + "-" + st.ToolName
+}
+
+func (s *toolChanger) plan(
 	ctx context.Context,
-	steps []step,
+	steps []PlanStep,
 	worldState *referenceframe.WorldState,
-) ([]motionplan.Trajectory, error) {
+) (*Plan, error) {
 	fs, err := framesystem.NewFromService(ctx, s.fsService, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build frame system: %w", err)
@@ -39,9 +70,9 @@ func (s *toolChanger) planAll(
 	startInputs[s.cfg.Arm] = currentInputs
 	startState := armplanning.NewPlanState(nil, startInputs)
 
-	trajectories := make([]motionplan.Trajectory, 0, len(steps))
+	plan := &Plan{Steps: make([]PlanStep, 0, len(steps))}
 	for _, st := range steps {
-		goalPose := spatialmath.NewPose(st.goal.Point, st.goal.Orientation)
+		goalPose := spatialmath.NewPose(st.Goal.Point, st.Goal.Orientation)
 		goalState := armplanning.NewPlanState(
 			referenceframe.FrameSystemPoses{
 				s.cfg.Arm: referenceframe.NewPoseInFrame(referenceframe.World, goalPose),
@@ -53,30 +84,39 @@ func (s *toolChanger) planAll(
 			WorldState:  worldState,
 			StartState:  startState,
 			Goals:       []*armplanning.PlanState{goalState},
-			Constraints: st.constraints,
+			Constraints: st.Constraints,
 		}
+		planStart := time.Now()
 		p, _, err := armplanning.PlanMotion(ctx, s.logger, req)
+		planDur := time.Since(planStart)
 		if err != nil {
-			return nil, fmt.Errorf("plan step %q: %w", st.name, err)
+			return nil, fmt.Errorf("plan step %q: %w", stepLabel(st), err)
 		}
 		traj := p.Trajectory()
-		trajectories = append(trajectories, traj)
+		st.Trajectory = traj
+		st.Status = PlannedStatus
+		st.PlanningTime = planDur
+		plan.Steps = append(plan.Steps, st)
+		plan.TotalPlanningTime += planDur
 		if len(traj) > 0 {
 			startState = armplanning.NewPlanState(nil, traj[len(traj)-1])
 		}
 	}
-	return trajectories, nil
+	return plan, nil
 }
 
-func (s *toolChanger) executeAll(ctx context.Context, trajectories []motionplan.Trajectory) error {
-	for _, traj := range trajectories {
-		armInputs := make([][]referenceframe.Input, len(traj))
-		for i, fsInputs := range traj {
-			armInputs[i] = fsInputs[s.cfg.Arm]
+func (s *toolChanger) execute(ctx context.Context, plan *Plan) error {
+	for i := range plan.Steps {
+		step := &plan.Steps[i]
+		armInputs := make([][]referenceframe.Input, len(step.Trajectory))
+		for j, fsInputs := range step.Trajectory {
+			armInputs[j] = fsInputs[s.cfg.Arm]
 		}
 		if err := s.arm.MoveThroughJointPositions(ctx, armInputs, nil, nil); err != nil {
-			return err
+			step.Status = FailedToExecuteStatus
+			return fmt.Errorf("execute step %q: %w", stepLabel(*step), err)
 		}
+		step.Status = ExecutedStatus
 	}
 	return nil
 }
