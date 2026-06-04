@@ -161,3 +161,39 @@ func TestDoCommand_SetWorldState_Malformed(t *testing.T) {
 	test.That(t, err, test.ShouldNotBeNil)
 	test.That(t, err.Error(), test.ShouldContainSubstring, "set_world_state")
 }
+
+func TestDoCommand_SwitchTool_WrongType(t *testing.T) {
+	s := newTestService()
+	_, err := s.DoCommand(context.Background(), map[string]interface{}{"switch_tool": 42})
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "must be a string")
+}
+
+func TestDoCommand_SwitchTool_Unknown(t *testing.T) {
+	s := newTestService()
+	_, err := s.DoCommand(context.Background(), map[string]interface{}{"switch_tool": "spoon"})
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "unknown tool")
+}
+
+func TestDoCommand_SwitchTool_AlreadyAttached(t *testing.T) {
+	s := newTestService()
+	tongs := "tongs"
+	s.currentTool = &tongs
+
+	res, err := s.DoCommand(context.Background(), map[string]interface{}{"switch_tool": "tongs"})
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, res["changed"], test.ShouldEqual, false)
+	test.That(t, res["from"], test.ShouldEqual, "tongs")
+	test.That(t, res["to"], test.ShouldEqual, "tongs")
+	test.That(t, s.currentTool, test.ShouldNotBeNil)
+	test.That(t, *s.currentTool, test.ShouldEqual, "tongs")
+}
+
+func TestDoCommand_Release_Empty(t *testing.T) {
+	s := newTestService()
+	res, err := s.DoCommand(context.Background(), map[string]interface{}{"release": true})
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, res["released"], test.ShouldBeNil)
+	test.That(t, s.currentTool, test.ShouldBeNil)
+}

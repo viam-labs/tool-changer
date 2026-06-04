@@ -29,7 +29,6 @@ The following attribute template can be used to configure this model:
   ],
   "approach-constraints": <motionplan.Constraints>,
   "dock-constraints": <motionplan.Constraints>,
-  "extra": <map[string]any>,
   "save-plans": <bool>
 }
 ```
@@ -43,7 +42,6 @@ The following attribute template can be used to configure this model:
 | `tools` | array | Required | One entry per tool slot. Must contain at least one entry with a non-empty unique `name`, a `slot-pose` with `orientation`, and a non-zero `approach-offset-mm`. |
 | `approach-constraints` | object | Optional | RDK `motionplan.Constraints` applied to moves between `parking-pose` and each tool's `slot-pose + approach-offset-mm`. Defaults to `nil` (free plan). |
 | `dock-constraints` | object | Optional | RDK `motionplan.Constraints` applied to the final linear plunge into `slot-pose` and the retract back out. Defaults to `nil` (free plan). |
-| `extra` | object | Optional | Free-form key/value map passed through to `armplanning.PlanRequest.Extra` on every plan call. |
 | `save-plans` | bool | Optional | When `true`, every motion command writes a JSON plan record to `/root/.viam/capture/`. Defaults to `false`. |
 
 ##### `tools[]` entries
@@ -53,3 +51,68 @@ The following attribute template can be used to configure this model:
 | `name` | string | Required | Caller-facing tool name (e.g. `"tongs"`, `"spoon"`). Must be unique within `tools`. |
 | `slot-pose` | object | Required | Pose at which the robot-side changer is mechanically engaged in this tool's rack holder. `orientation` is required. |
 | `approach-offset-mm` | object | Required | Per-axis offset from `slot-pose` defining where the linear approach begins. Must be non-zero on at least one axis. |
+
+### DoCommand
+
+`DoCommand` accepts exactly one of the following top-level keys. Any other key returns `unknown command, expected 'switch_tool', 'release', or 'set_world_state'`.
+
+#### `switch_tool`
+
+Idempotently brings the named tool onto the arm. If the named tool is already attached, returns immediately with `changed: false`. Otherwise releases any currently-attached tool, then docks the target. Every step in the sequence is planned upfront against a rolling start state; nothing moves if any step fails to plan.
+
+Request:
+
+```json
+{ "switch_tool": "tongs" }
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "changed": true,
+  "from": null,
+  "to": "tongs"
+}
+```
+
+Errors: `unknown tool "<name>"` if the target isn't in `tools`; `switch_tool: value must be a string` if the value is the wrong type.
+
+#### `release`
+
+Returns the currently-attached tool to its rack slot. No-op when nothing is attached (returns `released: null` without moving).
+
+Request:
+
+```json
+{ "release": true }
+```
+
+Response:
+
+```json
+{ "success": true, "released": "tongs" }
+```
+
+#### `set_world_state`
+
+Stores a `referenceframe.WorldState` for use by all subsequent motion commands (`switch_tool`, `release`). Pass `null` to clear. The stored state is reused across calls; callers update it whenever obstacles change.
+
+Request (set):
+
+```json
+{ "set_world_state": { "obstacles": [ ... ], "transforms": [ ... ] } }
+```
+
+Request (clear):
+
+```json
+{ "set_world_state": null }
+```
+
+Response:
+
+```json
+{ "success": true, "set": true }
+```

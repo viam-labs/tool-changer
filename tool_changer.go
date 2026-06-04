@@ -41,7 +41,6 @@ type Config struct {
 	Tools               []ToolConfig            `json:"tools"`
 	ApproachConstraints *motionplan.Constraints `json:"approach-constraints,omitempty"`
 	DockConstraints     *motionplan.Constraints `json:"dock-constraints,omitempty"`
-	Extra               map[string]any          `json:"extra,omitempty"`
 	SavePlans           bool                    `json:"save-plans,omitempty"`
 }
 
@@ -96,6 +95,8 @@ type toolChanger struct {
 	mu          sync.Mutex
 	currentTool *string
 	worldState  *referenceframe.WorldState
+
+	motionMu sync.Mutex
 }
 
 func newToolChanger(ctx context.Context, deps resource.Dependencies, rawConf resource.Config, logger logging.Logger) (resource.Resource, error) {
@@ -135,7 +136,13 @@ func (s *toolChanger) DoCommand(ctx context.Context, cmd map[string]interface{})
 	if v, ok := cmd["set_world_state"]; ok {
 		return s.doSetWorldState(v)
 	}
-	return nil, fmt.Errorf("unknown command, expected 'set_world_state'")
+	if v, ok := cmd["switch_tool"]; ok {
+		return s.doSwitchTool(ctx, v)
+	}
+	if _, ok := cmd["release"]; ok {
+		return s.doRelease(ctx)
+	}
+	return nil, fmt.Errorf("unknown command, expected 'switch_tool', 'release', or 'set_world_state'")
 }
 
 func (s *toolChanger) knownTool(name string) bool {
@@ -145,6 +152,33 @@ func (s *toolChanger) knownTool(name string) bool {
 		}
 	}
 	return false
+}
+
+func (s *toolChanger) findTool(name string) ToolConfig {
+	for _, t := range s.cfg.Tools {
+		if t.Name == name {
+			return t
+		}
+	}
+	return ToolConfig{}
+}
+
+func (s *toolChanger) rackVisitSteps(tool ToolConfig) []step {
+	approach := Pose{
+		Point: r3.Vector{
+			X: tool.SlotPose.Point.X + tool.ApproachOffsetMM.X,
+			Y: tool.SlotPose.Point.Y + tool.ApproachOffsetMM.Y,
+			Z: tool.SlotPose.Point.Z + tool.ApproachOffsetMM.Z,
+		},
+		Orientation: tool.SlotPose.Orientation,
+	}
+	return []step{
+		{name: "to-parking", goal: s.cfg.ParkingPose, constraints: nil},
+		{name: "approach-" + tool.Name, goal: approach, constraints: s.cfg.ApproachConstraints},
+		{name: "dock-" + tool.Name, goal: tool.SlotPose, constraints: s.cfg.DockConstraints},
+		{name: "retract-" + tool.Name, goal: approach, constraints: s.cfg.DockConstraints},
+		{name: "depart-" + tool.Name, goal: s.cfg.ParkingPose, constraints: s.cfg.ApproachConstraints},
+	}
 }
 
 func (s *toolChanger) doSetWorldState(v interface{}) (map[string]interface{}, error) {
@@ -162,6 +196,92 @@ func (s *toolChanger) doSetWorldState(v interface{}) (map[string]interface{}, er
 	s.worldState = ws
 	s.mu.Unlock()
 	return map[string]interface{}{"success": true, "set": true}, nil
+}
+
+func (s *toolChanger) doRelease(ctx context.Context) (map[string]interface{}, error) {
+	s.mu.Lock()
+	cur := s.currentTool
+	ws := s.worldState
+	s.mu.Unlock()
+
+	if cur == nil {
+		return map[string]interface{}{"success": true, "released": nil}, nil
+	}
+
+	s.motionMu.Lock()
+	defer s.motionMu.Unlock()
+
+	tool := s.findTool(*cur)
+	trajectories, err := s.planAll(ctx, s.rackVisitSteps(tool), ws)
+	if err != nil {
+		return nil, fmt.Errorf("release: %w", err)
+	}
+	if err := s.executeAll(ctx, trajectories); err != nil {
+		return nil, fmt.Errorf("release: %w", err)
+	}
+
+	s.mu.Lock()
+	s.currentTool = nil
+	s.mu.Unlock()
+
+	return map[string]interface{}{"success": true, "released": *cur}, nil
+}
+
+func (s *toolChanger) doSwitchTool(ctx context.Context, v interface{}) (map[string]interface{}, error) {
+	name, ok := v.(string)
+	if !ok {
+		return nil, fmt.Errorf("switch_tool: value must be a string, got %T", v)
+	}
+	if !s.knownTool(name) {
+		return nil, fmt.Errorf("unknown tool %q", name)
+	}
+
+	s.mu.Lock()
+	cur := s.currentTool
+	ws := s.worldState
+	s.mu.Unlock()
+
+	var from interface{}
+	if cur != nil {
+		from = *cur
+	}
+
+	if cur != nil && *cur == name {
+		return map[string]interface{}{
+			"success": true,
+			"changed": false,
+			"from":    from,
+			"to":      name,
+		}, nil
+	}
+
+	s.motionMu.Lock()
+	defer s.motionMu.Unlock()
+
+	var steps []step
+	if cur != nil {
+		steps = append(steps, s.rackVisitSteps(s.findTool(*cur))...)
+	}
+	steps = append(steps, s.rackVisitSteps(s.findTool(name))...)
+
+	trajectories, err := s.planAll(ctx, steps, ws)
+	if err != nil {
+		return nil, fmt.Errorf("switch_tool: %w", err)
+	}
+	if err := s.executeAll(ctx, trajectories); err != nil {
+		return nil, fmt.Errorf("switch_tool: %w", err)
+	}
+
+	s.mu.Lock()
+	s.currentTool = &name
+	s.mu.Unlock()
+
+	return map[string]interface{}{
+		"success": true,
+		"changed": true,
+		"from":    from,
+		"to":      name,
+	}, nil
 }
 
 func (s *toolChanger) Close(ctx context.Context) error {

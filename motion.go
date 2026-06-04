@@ -14,52 +14,71 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-func (s *toolChanger) plan(
+type step struct {
+	name        string
+	goal        Pose
+	constraints *motionplan.Constraints
+}
+
+func (s *toolChanger) planAll(
 	ctx context.Context,
-	goal Pose,
+	steps []step,
 	worldState *referenceframe.WorldState,
-) (motionplan.Trajectory, error) {
+) ([]motionplan.Trajectory, error) {
 	fs, err := framesystem.NewFromService(ctx, s.fsService, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build frame system: %w", err)
+		return nil, fmt.Errorf("build frame system: %w", err)
 	}
 
 	currentInputs, err := s.arm.CurrentInputs(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get arm inputs: %w", err)
+		return nil, fmt.Errorf("get arm inputs: %w", err)
 	}
 
 	startInputs := referenceframe.NewZeroInputs(fs)
 	startInputs[s.cfg.Arm] = currentInputs
+	startState := armplanning.NewPlanState(nil, startInputs)
 
-	goalPose := spatialmath.NewPose(goal.Point, goal.Orientation)
-	goalState := armplanning.NewPlanState(
-		referenceframe.FrameSystemPoses{
-			s.cfg.Arm: referenceframe.NewPoseInFrame(referenceframe.World, goalPose),
-		},
-		nil,
-	)
-
-	req := &armplanning.PlanRequest{
-		FrameSystem: fs,
-		WorldState:  worldState,
-		StartState:  armplanning.NewPlanState(nil, startInputs),
-		Goals:       []*armplanning.PlanState{goalState},
+	trajectories := make([]motionplan.Trajectory, 0, len(steps))
+	for _, st := range steps {
+		goalPose := spatialmath.NewPose(st.goal.Point, st.goal.Orientation)
+		goalState := armplanning.NewPlanState(
+			referenceframe.FrameSystemPoses{
+				s.cfg.Arm: referenceframe.NewPoseInFrame(referenceframe.World, goalPose),
+			},
+			nil,
+		)
+		req := &armplanning.PlanRequest{
+			FrameSystem: fs,
+			WorldState:  worldState,
+			StartState:  startState,
+			Goals:       []*armplanning.PlanState{goalState},
+			Constraints: st.constraints,
+		}
+		p, _, err := armplanning.PlanMotion(ctx, s.logger, req)
+		if err != nil {
+			return nil, fmt.Errorf("plan step %q: %w", st.name, err)
+		}
+		traj := p.Trajectory()
+		trajectories = append(trajectories, traj)
+		if len(traj) > 0 {
+			startState = armplanning.NewPlanState(nil, traj[len(traj)-1])
+		}
 	}
-
-	p, _, err := armplanning.PlanMotion(ctx, s.logger, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to plan: %w", err)
-	}
-	return p.Trajectory(), nil
+	return trajectories, nil
 }
 
-func (s *toolChanger) execute(ctx context.Context, traj motionplan.Trajectory) error {
-	armInputs := make([][]referenceframe.Input, len(traj))
-	for i, fsInputs := range traj {
-		armInputs[i] = fsInputs[s.cfg.Arm]
+func (s *toolChanger) executeAll(ctx context.Context, trajectories []motionplan.Trajectory) error {
+	for _, traj := range trajectories {
+		armInputs := make([][]referenceframe.Input, len(traj))
+		for i, fsInputs := range traj {
+			armInputs[i] = fsInputs[s.cfg.Arm]
+		}
+		if err := s.arm.MoveThroughJointPositions(ctx, armInputs, nil, nil); err != nil {
+			return err
+		}
 	}
-	return s.arm.MoveThroughJointPositions(ctx, armInputs, nil, nil)
+	return nil
 }
 
 // TODO: if motion commands ever need to override the stored world-state for a
