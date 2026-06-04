@@ -1,6 +1,7 @@
 package toolchanger
 
 import (
+	"context"
 	"testing"
 
 	"github.com/golang/geo/r3"
@@ -113,4 +114,97 @@ func TestValidate(t *testing.T) {
 			test.That(t, deps, test.ShouldResemble, tt.wantDeps)
 		})
 	}
+}
+
+func newTestService() *toolChanger {
+	return &toolChanger{cfg: validConfig()}
+}
+
+func TestDoCommand_UnknownKey(t *testing.T) {
+	s := newTestService()
+	_, err := s.DoCommand(context.Background(), map[string]interface{}{"nope": true})
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "unknown command")
+}
+
+func TestDoCommand_SetWorldState_Valid(t *testing.T) {
+	s := newTestService()
+	// Empty WorldState object decodes to a valid (empty) state.
+	res, err := s.DoCommand(context.Background(), map[string]interface{}{
+		"set_world_state": map[string]interface{}{},
+	})
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, res["success"], test.ShouldEqual, true)
+	test.That(t, res["set"], test.ShouldEqual, true)
+	test.That(t, s.worldState, test.ShouldNotBeNil)
+}
+
+func TestDoCommand_SetWorldState_Clear(t *testing.T) {
+	s := newTestService()
+	_, err := s.DoCommand(context.Background(), map[string]interface{}{
+		"set_world_state": map[string]interface{}{},
+	})
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, s.worldState, test.ShouldNotBeNil)
+
+	res, err := s.DoCommand(context.Background(), map[string]interface{}{"set_world_state": nil})
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, res["set"], test.ShouldEqual, false)
+	test.That(t, s.worldState, test.ShouldBeNil)
+}
+
+func TestDoCommand_SetWorldState_Malformed(t *testing.T) {
+	s := newTestService()
+	_, err := s.DoCommand(context.Background(), map[string]interface{}{
+		"set_world_state": "not an object",
+	})
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "set_world_state")
+}
+
+func TestDoCommand_GetCurrentTool_Empty(t *testing.T) {
+	s := newTestService()
+	res, err := s.DoCommand(context.Background(), map[string]interface{}{"get_current_tool": true})
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, res["tool"], test.ShouldBeNil)
+}
+
+func TestDoCommand_SetCurrentTool_Valid(t *testing.T) {
+	s := newTestService()
+	res, err := s.DoCommand(context.Background(), map[string]interface{}{"set_current_tool": "tongs"})
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, res["success"], test.ShouldEqual, true)
+	test.That(t, res["tool"], test.ShouldEqual, "tongs")
+
+	res, err = s.DoCommand(context.Background(), map[string]interface{}{"get_current_tool": true})
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, res["tool"], test.ShouldEqual, "tongs")
+}
+
+func TestDoCommand_SetCurrentTool_Unknown(t *testing.T) {
+	s := newTestService()
+	_, err := s.DoCommand(context.Background(), map[string]interface{}{"set_current_tool": "spoon"})
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "unknown tool")
+}
+
+func TestDoCommand_SetCurrentTool_Nil(t *testing.T) {
+	s := newTestService()
+	_, err := s.DoCommand(context.Background(), map[string]interface{}{"set_current_tool": "tongs"})
+	test.That(t, err, test.ShouldBeNil)
+
+	res, err := s.DoCommand(context.Background(), map[string]interface{}{"set_current_tool": nil})
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, res["tool"], test.ShouldBeNil)
+
+	res, err = s.DoCommand(context.Background(), map[string]interface{}{"get_current_tool": true})
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, res["tool"], test.ShouldBeNil)
+}
+
+func TestDoCommand_SetCurrentTool_WrongType(t *testing.T) {
+	s := newTestService()
+	_, err := s.DoCommand(context.Background(), map[string]interface{}{"set_current_tool": 42})
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "must be a string or null")
 }
