@@ -1,0 +1,29 @@
+{
+  "$schema": "https://dl.viam.dev/module.schema.json",
+  "module_id": "viam-labs:tool-changer",
+  "visibility": "public",
+  "url": "https://github.com/viam-labs/tool-changer",
+  "description": "Viam module providing a generic tool-changer service for swapping end-effectors on a robot arm.",
+  "models": [
+    {
+      "api": "rdk:service:generic",
+      "model": "viam-labs:tool-changer:default",
+      "markdown_link": "README.md",
+      "short_description": "Drives an arm through a tool-changer dock/undock sequence."
+    }
+  ],
+  "markdown_link": "README.md",
+  "entrypoint": "bin/tool-changer",
+  "first_run": "",
+  "build": {
+    "build": "make module.tar.gz",
+    "setup": "make setup",
+    "path": "module.tar.gz",
+    "arch": [
+      "linux/amd64",
+      "linux/arm64",
+      "darwin/arm64",
+      "windows/amd64"
+    ]
+  }
+}
