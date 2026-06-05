@@ -40,7 +40,7 @@ type Config struct {
 	TransitConstraints *motionplan.Constraints `json:"transit-constraints,omitempty"`
 	LiftConstraints    *motionplan.Constraints `json:"lift-constraints,omitempty"`
 	SlideConstraints   *motionplan.Constraints `json:"slide-constraints,omitempty"`
-	Speed              *SpeedConfig            `json:"speed,omitempty"`
+	SlideSpeed         *SpeedConfig            `json:"slide-speed,omitempty"`
 }
 
 type SpeedConfig struct {
@@ -101,8 +101,8 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 		}
 	}
 
-	if c.Speed != nil {
-		if err := c.Speed.Validate(path + ".speed"); err != nil {
+	if c.SlideSpeed != nil {
+		if err := c.SlideSpeed.Validate(path + ".slide-speed"); err != nil {
 			return nil, nil, err
 		}
 	}
