@@ -30,7 +30,11 @@ The following attribute template can be used to configure this model:
   ],
   "transit-constraints": <motionplan.Constraints>,
   "lift-constraints": <motionplan.Constraints>,
-  "slide-constraints": <motionplan.Constraints>
+  "slide-constraints": <motionplan.Constraints>,
+  "slide-speed": {
+    "max_vel_degs_per_sec": <float>,
+    "max_acc_degs_per_sec2": <float>
+  }
 }
 ```
 
@@ -44,6 +48,14 @@ The following attribute template can be used to configure this model:
 | `transit-constraints` | object | Optional | RDK `motionplan.Constraints` applied to moves between `parking-pose` and each tool's rack-side entry/exit pose (`lift-pose` for take entry / `slide-pose` for take exit, and the reverse for release). Defaults to `nil` (free plan). |
 | `lift-constraints` | object | Optional | RDK `motionplan.Constraints` applied to the vertical move between `lift-pose` and `slot-pose` (take entry and release exit). Defaults to `nil` (free plan). |
 | `slide-constraints` | object | Optional | RDK `motionplan.Constraints` applied to the final slide into `slot-pose` and the slide-out on release. Defaults to `nil` (free plan). |
+| `slide-speed` | object | Optional | Joint-velocity/acceleration cap applied only to the slide-in (engagement) and slide-out (disengagement) steps. Transit and lift steps use the arm's default speed regardless. When unset, slide steps also use the arm's default. See `slide-speed` fields table. |
+
+##### `slide-speed` fields
+
+| Name | Type | Inclusion | Description |
+|---|---|---|---|
+| `max_vel_degs_per_sec` | float | Optional | Max joint velocity in degrees per second. Must be non-negative. Internally converted to radians for `arm.MoveOptions`. |
+| `max_acc_degs_per_sec2` | float | Optional | Max joint acceleration in degrees per second². Must be non-negative. Internally converted to radians for `arm.MoveOptions`. |
 
 ##### `tools[]` entries
 

@@ -2,8 +2,10 @@ package toolchanger
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/golang/geo/r3"
+	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot/framesystem"
@@ -38,6 +40,39 @@ type Config struct {
 	TransitConstraints *motionplan.Constraints `json:"transit-constraints,omitempty"`
 	LiftConstraints    *motionplan.Constraints `json:"lift-constraints,omitempty"`
 	SlideConstraints   *motionplan.Constraints `json:"slide-constraints,omitempty"`
+	SlideSpeed         *SpeedConfig            `json:"slide-speed,omitempty"`
+}
+
+type SpeedConfig struct {
+	MaxVelDegsPerSec  float64 `json:"max_vel_degs_per_sec,omitempty"`
+	MaxAccDegsPerSec2 float64 `json:"max_acc_degs_per_sec2,omitempty"`
+}
+
+func (s *SpeedConfig) Validate(path string) error {
+	if s.MaxVelDegsPerSec < 0 {
+		return fmt.Errorf("%s.max_vel_degs_per_sec must be non-negative", path)
+	}
+	if s.MaxAccDegsPerSec2 < 0 {
+		return fmt.Errorf("%s.max_acc_degs_per_sec2 must be non-negative", path)
+	}
+	return nil
+}
+
+// MoveOptions returns *arm.MoveOptions populated from the config, or nil if
+// neither field is positive. Callers should pass nil to
+// MoveThroughJointPositions to use the arm's default speed.
+func (s *SpeedConfig) MoveOptions() *arm.MoveOptions {
+	if s == nil || (s.MaxVelDegsPerSec <= 0 && s.MaxAccDegsPerSec2 <= 0) {
+		return nil
+	}
+	opts := &arm.MoveOptions{}
+	if s.MaxVelDegsPerSec > 0 {
+		opts.MaxVelRads = s.MaxVelDegsPerSec * math.Pi / 180.0
+	}
+	if s.MaxAccDegsPerSec2 > 0 {
+		opts.MaxAccRads = s.MaxAccDegsPerSec2 * math.Pi / 180.0
+	}
+	return opts
 }
 
 func (c *Config) Validate(path string) ([]string, []string, error) {
@@ -62,6 +97,12 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 		}
 		seen[tool.Name] = true
 		if err := tool.Validate(toolPath); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	if c.SlideSpeed != nil {
+		if err := c.SlideSpeed.Validate(path + ".slide-speed"); err != nil {
 			return nil, nil, err
 		}
 	}
