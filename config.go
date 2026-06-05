@@ -27,10 +27,11 @@ type Pose struct {
 }
 
 type ToolConfig struct {
-	Name          string    `json:"name"`
-	SlotPose      Pose      `json:"slot-pose"`
-	SlideOffsetMM r3.Vector `json:"slide-offset-mm,omitzero"`
-	LiftOffsetMM  r3.Vector `json:"lift-offset-mm,omitzero"`
+	Name                   string                                                    `json:"name"`
+	SlotPose               Pose                                                      `json:"slot-pose"`
+	SlideOffsetMM          r3.Vector                                                 `json:"slide-offset-mm,omitzero"`
+	LiftOffsetMM           r3.Vector                                                 `json:"lift-offset-mm,omitzero"`
+	SlideAllowedCollisions []motionplan.CollisionSpecificationAllowedFrameCollisions `json:"slide-allowed-collisions,omitempty"`
 }
 
 type Config struct {

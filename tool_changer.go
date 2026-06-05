@@ -7,6 +7,7 @@ import (
 
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/logging"
+	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot/framesystem"
@@ -108,16 +109,36 @@ func (s *toolChanger) rackPoses(tool ToolConfig) (slidePose, liftPose Pose) {
 	return
 }
 
+// mergeSlideConstraints returns a *motionplan.Constraints that combines the
+// service-level slide constraints with the per-tool allowed collision pairs.
+// The result is a fresh value; the base constraints and the allowed list
+// are not mutated. Returns nil when both base and allowed are empty.
+func mergeSlideConstraints(base *motionplan.Constraints, allowed []motionplan.CollisionSpecificationAllowedFrameCollisions) *motionplan.Constraints {
+	if len(allowed) == 0 {
+		return base
+	}
+	result := &motionplan.Constraints{}
+	if base != nil {
+		*result = *base
+	}
+	result.CollisionSpecification = append(
+		append([]motionplan.CollisionSpecification{}, result.CollisionSpecification...),
+		motionplan.CollisionSpecification{Allows: append([]motionplan.CollisionSpecificationAllowedFrameCollisions{}, allowed...)},
+	)
+	return result
+}
+
 // takeSteps returns the 4-step traversal for picking a tool up out of the
 // rack: parking -> lift -> slot -> slide -> parking. Engagement happens on
 // the descent from lift-pose to slot; the arm exits via slide-pose with
 // the tool attached.
 func (s *toolChanger) takeSteps(tool ToolConfig) []PlanStep {
 	slidePose, liftPose := s.rackPoses(tool)
+	slideConstraints := mergeSlideConstraints(s.cfg.SlideConstraints, tool.SlideAllowedCollisions)
 	return []PlanStep{
 		{Type: transitInStepType, ToolName: tool.Name, Goal: liftPose, Constraints: s.cfg.TransitConstraints},
 		{Type: liftDownStepType, ToolName: tool.Name, Goal: tool.SlotPose, Constraints: s.cfg.LiftConstraints},
-		{Type: slideOutStepType, ToolName: tool.Name, Goal: slidePose, Constraints: s.cfg.SlideConstraints},
+		{Type: slideOutStepType, ToolName: tool.Name, Goal: slidePose, Constraints: slideConstraints},
 		{Type: transitOutStepType, ToolName: tool.Name, Goal: s.cfg.ParkingPose, Constraints: s.cfg.TransitConstraints},
 	}
 }
@@ -128,9 +149,10 @@ func (s *toolChanger) takeSteps(tool ToolConfig) []PlanStep {
 // leaving the tool in the holder.
 func (s *toolChanger) releaseSteps(tool ToolConfig) []PlanStep {
 	slidePose, liftPose := s.rackPoses(tool)
+	slideConstraints := mergeSlideConstraints(s.cfg.SlideConstraints, tool.SlideAllowedCollisions)
 	return []PlanStep{
 		{Type: transitInStepType, ToolName: tool.Name, Goal: slidePose, Constraints: s.cfg.TransitConstraints},
-		{Type: slideInStepType, ToolName: tool.Name, Goal: tool.SlotPose, Constraints: s.cfg.SlideConstraints},
+		{Type: slideInStepType, ToolName: tool.Name, Goal: tool.SlotPose, Constraints: slideConstraints},
 		{Type: liftUpStepType, ToolName: tool.Name, Goal: liftPose, Constraints: s.cfg.LiftConstraints},
 		{Type: transitOutStepType, ToolName: tool.Name, Goal: s.cfg.ParkingPose, Constraints: s.cfg.TransitConstraints},
 	}

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/golang/geo/r3"
+	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/robot/framesystem"
 	"go.viam.com/rdk/spatialmath"
 	"go.viam.com/test"
@@ -219,4 +220,42 @@ func TestDoCommand_Release_Empty(t *testing.T) {
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, res["released"], test.ShouldBeNil)
 	test.That(t, s.currentTool, test.ShouldBeNil)
+}
+
+func TestMergeSlideConstraints_Nil(t *testing.T) {
+	test.That(t, mergeSlideConstraints(nil, nil), test.ShouldBeNil)
+}
+
+func TestMergeSlideConstraints_OnlyAllowed(t *testing.T) {
+	allowed := []motionplan.CollisionSpecificationAllowedFrameCollisions{
+		{Frame1: "gripper:claws", Frame2: "tongs:body"},
+	}
+	got := mergeSlideConstraints(nil, allowed)
+	test.That(t, got, test.ShouldNotBeNil)
+	test.That(t, len(got.CollisionSpecification), test.ShouldEqual, 1)
+	test.That(t, got.CollisionSpecification[0].Allows, test.ShouldResemble, allowed)
+}
+
+func TestMergeSlideConstraints_BaseAndAllowed(t *testing.T) {
+	base := &motionplan.Constraints{
+		LinearConstraint: []motionplan.LinearConstraint{{LineToleranceMm: 1.0}},
+		CollisionSpecification: []motionplan.CollisionSpecification{
+			{Allows: []motionplan.CollisionSpecificationAllowedFrameCollisions{
+				{Frame1: "a", Frame2: "b"},
+			}},
+		},
+	}
+	allowed := []motionplan.CollisionSpecificationAllowedFrameCollisions{
+		{Frame1: "gripper:claws", Frame2: "tongs:body"},
+	}
+	got := mergeSlideConstraints(base, allowed)
+	test.That(t, got, test.ShouldNotBeNil)
+	test.That(t, len(got.LinearConstraint), test.ShouldEqual, 1)
+	test.That(t, len(got.CollisionSpecification), test.ShouldEqual, 2)
+	// Base's existing CollisionSpecification stays at index 0; new pairs appended.
+	test.That(t, got.CollisionSpecification[0].Allows[0].Frame1, test.ShouldEqual, "a")
+	test.That(t, got.CollisionSpecification[1].Allows[0].Frame2, test.ShouldEqual, "tongs:body")
+
+	// Base must not have been mutated.
+	test.That(t, len(base.CollisionSpecification), test.ShouldEqual, 1)
 }

@@ -25,7 +25,10 @@ The following attribute template can be used to configure this model:
         "orientation": { "x": <float>, "y": <float>, "z": <float>, "th": <float> }
       },
       "slide-offset-mm": { "X": <float>, "Y": <float>, "Z": <float> },
-      "lift-offset-mm": { "X": <float>, "Y": <float>, "Z": <float> }
+      "lift-offset-mm": { "X": <float>, "Y": <float>, "Z": <float> },
+      "slide-allowed-collisions": [
+        { "Frame1": <string>, "Frame2": <string> }
+      ]
     }
   ],
   "transit-constraints": <motionplan.Constraints>,
@@ -67,6 +70,7 @@ The following attribute template can be used to configure this model:
 | `slot-pose` | object | Required | Pose at which the robot-side changer is mechanically engaged in this tool's rack holder. `orientation` is required. |
 | `slide-offset-mm` | object | Required | Slide direction relative to `slot-pose`. From `slot-pose + slide-offset-mm`, sliding to `slot-pose` is what mechanically engages the tool. Must be non-zero. |
 | `lift-offset-mm` | object | Required | Perpendicular clearance from the rack relative to `slot-pose + slide-offset-mm`. From that point, moving by this further brings the arm fully clear of the rack (typically a vertical lift). Must be non-zero. |
+| `slide-allowed-collisions` | array | Optional | List of `{Frame1, Frame2}` pairs the motion planner is allowed to ignore during this tool's `SlideIn` and `SlideOut` steps. Used to permit the inevitable gripper-tool contact during mechanical engagement. Pairs are not honored on other step types (transit, lift) — those keep full collision checking. Frame identifiers use the standard `<frame_name>:<geometry_label>` form. |
 
 #### Rack-side poses
 
