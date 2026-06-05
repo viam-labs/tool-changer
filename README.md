@@ -24,13 +24,13 @@ The following attribute template can be used to configure this model:
         "point": { "X": <float>, "Y": <float>, "Z": <float> },
         "orientation": { "x": <float>, "y": <float>, "z": <float>, "th": <float> }
       },
-      "approach-offset-mm": { "X": <float>, "Y": <float>, "Z": <float> }
+      "slide-offset-mm": { "X": <float>, "Y": <float>, "Z": <float> },
+      "lift-offset-mm": { "X": <float>, "Y": <float>, "Z": <float> }
     }
   ],
-  "approach-constraints": <motionplan.Constraints>,
-  "dock-constraints": <motionplan.Constraints>,
-  "extra": <map[string]any>,
-  "save-plans": <bool>
+  "transit-constraints": <motionplan.Constraints>,
+  "lift-constraints": <motionplan.Constraints>,
+  "slide-constraints": <motionplan.Constraints>
 }
 ```
 
@@ -40,11 +40,10 @@ The following attribute template can be used to configure this model:
 |---|---|---|---|
 | `arm` | string | Required | Name of the `arm` component this service drives through the rack. The framesystem service is added as an implicit dependency for planning. |
 | `parking-pose` | object | Required | Pose the arm moves to before entering the rack and returns to after a successful change. `orientation` is required. |
-| `tools` | array | Required | One entry per tool slot. Must contain at least one entry with a non-empty unique `name`, a `slot-pose` with `orientation`, and a non-zero `approach-offset-mm`. |
-| `approach-constraints` | object | Optional | RDK `motionplan.Constraints` applied to moves between `parking-pose` and each tool's `slot-pose + approach-offset-mm`. Defaults to `nil` (free plan). |
-| `dock-constraints` | object | Optional | RDK `motionplan.Constraints` applied to the final linear plunge into `slot-pose` and the retract back out. Defaults to `nil` (free plan). |
-| `extra` | object | Optional | Free-form key/value map passed through to `armplanning.PlanRequest.Extra` on every plan call. |
-| `save-plans` | bool | Optional | When `true`, every motion command writes a JSON plan record to `/root/.viam/capture/`. Defaults to `false`. |
+| `tools` | array | Required | One entry per tool slot. Must contain at least one entry. See `tools[]` entries table. |
+| `transit-constraints` | object | Optional | RDK `motionplan.Constraints` applied to moves between `parking-pose` and each tool's `clear-pose`. Defaults to `nil` (free plan). |
+| `lift-constraints` | object | Optional | RDK `motionplan.Constraints` applied to the descent between `clear-pose` and `slide-pose`, and the lift on the reverse. Defaults to `nil` (free plan). |
+| `slide-constraints` | object | Optional | RDK `motionplan.Constraints` applied to the final slide into `slot-pose` and the slide-out on release. Defaults to `nil` (free plan). |
 
 ##### `tools[]` entries
 
@@ -52,4 +51,11 @@ The following attribute template can be used to configure this model:
 |---|---|---|---|
 | `name` | string | Required | Caller-facing tool name (e.g. `"tongs"`, `"spoon"`). Must be unique within `tools`. |
 | `slot-pose` | object | Required | Pose at which the robot-side changer is mechanically engaged in this tool's rack holder. `orientation` is required. |
-| `approach-offset-mm` | object | Required | Per-axis offset from `slot-pose` defining where the linear approach begins. Must be non-zero on at least one axis. |
+| `slide-offset-mm` | object | Required | Slide direction relative to `slot-pose`. From `slot-pose + slide-offset-mm`, sliding to `slot-pose` is what mechanically engages the tool. Must be non-zero. |
+| `lift-offset-mm` | object | Required | Perpendicular clearance from the rack relative to `slot-pose + slide-offset-mm`. From that point, moving by this further brings the arm fully clear of the rack (typically a vertical lift). Must be non-zero. |
+
+#### Rack-side poses
+
+- `clear-pose` = `slot-pose + slide-offset-mm + lift-offset-mm`
+- `slide-pose` = `slot-pose + slide-offset-mm`
+- `slot-pose` = mechanically engaged

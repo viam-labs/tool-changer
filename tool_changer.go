@@ -30,19 +30,19 @@ type Pose struct {
 }
 
 type ToolConfig struct {
-	Name             string    `json:"name"`
-	SlotPose         Pose      `json:"slot-pose"`
-	ApproachOffsetMM r3.Vector `json:"approach-offset-mm,omitzero"`
+	Name          string    `json:"name"`
+	SlotPose      Pose      `json:"slot-pose"`
+	SlideOffsetMM r3.Vector `json:"slide-offset-mm,omitzero"`
+	LiftOffsetMM  r3.Vector `json:"lift-offset-mm,omitzero"`
 }
 
 type Config struct {
-	Arm                 string                  `json:"arm"`
-	ParkingPose         Pose                    `json:"parking-pose"`
-	Tools               []ToolConfig            `json:"tools"`
-	ApproachConstraints *motionplan.Constraints `json:"approach-constraints,omitempty"`
-	DockConstraints     *motionplan.Constraints `json:"dock-constraints,omitempty"`
-	Extra               map[string]any          `json:"extra,omitempty"`
-	SavePlans           bool                    `json:"save-plans,omitempty"`
+	Arm                string                  `json:"arm"`
+	ParkingPose        Pose                    `json:"parking-pose"`
+	Tools              []ToolConfig            `json:"tools"`
+	TransitConstraints *motionplan.Constraints `json:"transit-constraints,omitempty"`
+	LiftConstraints    *motionplan.Constraints `json:"lift-constraints,omitempty"`
+	SlideConstraints   *motionplan.Constraints `json:"slide-constraints,omitempty"`
 }
 
 func (c *Config) Validate(path string) ([]string, []string, error) {
@@ -75,8 +75,11 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 		if err := tool.SlotPose.Orientation.IsValid(); err != nil {
 			return nil, nil, fmt.Errorf("%s: slot-pose.orientation: %w", toolPath, err)
 		}
-		if tool.ApproachOffsetMM == (r3.Vector{}) {
-			return nil, nil, fmt.Errorf("%s: approach-offset-mm must be non-zero", toolPath)
+		if tool.SlideOffsetMM == (r3.Vector{}) {
+			return nil, nil, fmt.Errorf("%s: slide-offset-mm is required and must be non-zero", toolPath)
+		}
+		if tool.LiftOffsetMM == (r3.Vector{}) {
+			return nil, nil, fmt.Errorf("%s: lift-offset-mm is required and must be non-zero", toolPath)
 		}
 	}
 
