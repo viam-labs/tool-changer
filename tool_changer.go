@@ -109,29 +109,29 @@ func (s *toolChanger) rackPoses(tool ToolConfig) (slidePose, liftPose Pose) {
 }
 
 // takeSteps returns the 4-step traversal for picking a tool up out of the
-// rack: parking -> slide -> slot -> lift -> parking. Engagement happens at
-// slot; the arm exits via lift-pose so it doesn't immediately slide back
-// out and disengage.
+// rack: parking -> lift -> slot -> slide -> parking. Engagement happens on
+// the descent from lift-pose to slot; the arm exits via slide-pose with
+// the tool attached.
 func (s *toolChanger) takeSteps(tool ToolConfig) []PlanStep {
-	slidePose, liftPose := s.rackPoses(tool)
-	return []PlanStep{
-		{Type: transitInStepType, ToolName: tool.Name, Goal: slidePose, Constraints: s.cfg.TransitConstraints},
-		{Type: slideInStepType, ToolName: tool.Name, Goal: tool.SlotPose, Constraints: s.cfg.SlideConstraints},
-		{Type: liftUpStepType, ToolName: tool.Name, Goal: liftPose, Constraints: s.cfg.LiftConstraints},
-		{Type: transitOutStepType, ToolName: tool.Name, Goal: s.cfg.ParkingPose, Constraints: s.cfg.TransitConstraints},
-	}
-}
-
-// releaseSteps returns the 4-step traversal for putting a tool back in the
-// rack: parking -> lift -> slot -> slide -> parking. Deposit happens at
-// slot; the arm exits via slide-pose so it doesn't pull the tool back out
-// of the holder it was just deposited into.
-func (s *toolChanger) releaseSteps(tool ToolConfig) []PlanStep {
 	slidePose, liftPose := s.rackPoses(tool)
 	return []PlanStep{
 		{Type: transitInStepType, ToolName: tool.Name, Goal: liftPose, Constraints: s.cfg.TransitConstraints},
 		{Type: liftDownStepType, ToolName: tool.Name, Goal: tool.SlotPose, Constraints: s.cfg.LiftConstraints},
 		{Type: slideOutStepType, ToolName: tool.Name, Goal: slidePose, Constraints: s.cfg.SlideConstraints},
+		{Type: transitOutStepType, ToolName: tool.Name, Goal: s.cfg.ParkingPose, Constraints: s.cfg.TransitConstraints},
+	}
+}
+
+// releaseSteps returns the 4-step traversal for putting a tool back in the
+// rack: parking -> slide -> slot -> lift -> parking. Deposit happens on
+// the slide-in from slide-pose to slot; the arm exits via lift-pose,
+// leaving the tool in the holder.
+func (s *toolChanger) releaseSteps(tool ToolConfig) []PlanStep {
+	slidePose, liftPose := s.rackPoses(tool)
+	return []PlanStep{
+		{Type: transitInStepType, ToolName: tool.Name, Goal: slidePose, Constraints: s.cfg.TransitConstraints},
+		{Type: slideInStepType, ToolName: tool.Name, Goal: tool.SlotPose, Constraints: s.cfg.SlideConstraints},
+		{Type: liftUpStepType, ToolName: tool.Name, Goal: liftPose, Constraints: s.cfg.LiftConstraints},
 		{Type: transitOutStepType, ToolName: tool.Name, Goal: s.cfg.ParkingPose, Constraints: s.cfg.TransitConstraints},
 	}
 }
