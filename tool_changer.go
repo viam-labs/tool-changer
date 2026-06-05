@@ -166,12 +166,20 @@ func (s *toolChanger) doRelease(ctx context.Context) (map[string]interface{}, er
 		return map[string]interface{}{"success": true, "released": nil}, nil
 	}
 
-	plan, err := s.plan(ctx, s.releaseSteps(s.findTool(*cur)), ws)
-	if err != nil {
-		return nil, fmt.Errorf("release: %w", err)
+	plan, planErr := s.plan(ctx, s.releaseSteps(s.findTool(*cur)), ws)
+	var execErr error
+	if planErr == nil {
+		execErr = s.execute(ctx, plan)
 	}
-	if err := s.execute(ctx, plan); err != nil {
-		return nil, fmt.Errorf("release: %w", err)
+	finalErr := planErr
+	if finalErr == nil {
+		finalErr = execErr
+	}
+	if s.cfg.SavePlanRequests {
+		s.savePlanRequests(plan, "release", *cur, "", finalErr)
+	}
+	if finalErr != nil {
+		return nil, fmt.Errorf("release: %w", finalErr)
 	}
 
 	s.mu.Lock()
@@ -218,12 +226,24 @@ func (s *toolChanger) doSwitchTool(ctx context.Context, v interface{}) (map[stri
 	}
 	steps = append(steps, s.takeSteps(s.findTool(name))...)
 
-	plan, err := s.plan(ctx, steps, ws)
-	if err != nil {
-		return nil, fmt.Errorf("switch_tool: %w", err)
+	plan, planErr := s.plan(ctx, steps, ws)
+	var execErr error
+	if planErr == nil {
+		execErr = s.execute(ctx, plan)
 	}
-	if err := s.execute(ctx, plan); err != nil {
-		return nil, fmt.Errorf("switch_tool: %w", err)
+	finalErr := planErr
+	if finalErr == nil {
+		finalErr = execErr
+	}
+	if s.cfg.SavePlanRequests {
+		fromName := ""
+		if cur != nil {
+			fromName = *cur
+		}
+		s.savePlanRequests(plan, "switch_tool", fromName, name, finalErr)
+	}
+	if finalErr != nil {
+		return nil, fmt.Errorf("switch_tool: %w", finalErr)
 	}
 
 	s.mu.Lock()

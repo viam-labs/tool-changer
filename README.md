@@ -34,7 +34,8 @@ The following attribute template can be used to configure this model:
   "slide-speed": {
     "max_vel_degs_per_sec": <float>,
     "max_acc_degs_per_sec2": <float>
-  }
+  },
+  "save-plan-requests": <bool>
 }
 ```
 
@@ -49,6 +50,7 @@ The following attribute template can be used to configure this model:
 | `lift-constraints` | object | Optional | RDK `motionplan.Constraints` applied to the vertical move between `lift-pose` and `slot-pose` (take entry and release exit). Defaults to `nil` (free plan). |
 | `slide-constraints` | object | Optional | RDK `motionplan.Constraints` applied to the final slide into `slot-pose` and the slide-out on release. Defaults to `nil` (free plan). |
 | `slide-speed` | object | Optional | Joint-velocity/acceleration cap applied only to the slide-in (engagement) and slide-out (disengagement) steps. Transit and lift steps use the arm's default speed regardless. When unset, slide steps also use the arm's default. See `slide-speed` fields table. |
+| `save-plan-requests` | bool | Optional | When true, every `switch_tool` and `release` call writes per-step `armplanning.PlanRequest` JSON files plus a `metadata.json` (command, from/to, total planning time, error) to a per-call subdirectory under the Viam capture dir (e.g. `<capture-dir>/tool-changer-<ts>-<command>/`). World-state payloads are deliberately stripped from each saved request; the rest of the request (frame system, goals, start state, constraints, planner options) is preserved verbatim and can be replayed against the planner offline. Defaults to false. |
 
 ##### `slide-speed` fields
 

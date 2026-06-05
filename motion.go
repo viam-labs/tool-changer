@@ -32,13 +32,14 @@ const (
 )
 
 type PlanStep struct {
-	Type         string                  `json:"type"`
-	ToolName     string                  `json:"tool_name,omitempty"`
-	Goal         Pose                    `json:"goal"`
-	Constraints  *motionplan.Constraints `json:"constraints,omitempty"`
-	Trajectory   motionplan.Trajectory   `json:"trajectory,omitempty"`
-	Status       string                  `json:"status"`
-	PlanningTime time.Duration           `json:"planning_time"`
+	Type         string                   `json:"type"`
+	ToolName     string                   `json:"tool_name,omitempty"`
+	Goal         Pose                     `json:"goal"`
+	Constraints  *motionplan.Constraints  `json:"constraints,omitempty"`
+	Request      *armplanning.PlanRequest `json:"-"`
+	Trajectory   motionplan.Trajectory    `json:"trajectory,omitempty"`
+	Status       string                   `json:"status"`
+	PlanningTime time.Duration            `json:"planning_time"`
 }
 
 type Plan struct {
@@ -95,6 +96,7 @@ func (s *toolChanger) plan(
 			return nil, fmt.Errorf("plan step %q: %w", stepLabel(st), err)
 		}
 		traj := p.Trajectory()
+		st.Request = req
 		st.Trajectory = traj
 		st.Status = plannedStatus
 		st.PlanningTime = planDur

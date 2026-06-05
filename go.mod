@@ -3,6 +3,7 @@ module github.com/viam-labs/tool-changer
 go 1.26.0
 
 require (
+	github.com/erh/vmodutils v0.3.11
 	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
 	go.viam.com/api v0.1.552
 	go.viam.com/rdk v0.127.1-0.20260520181737-0db644d874da
