@@ -58,7 +58,14 @@ The following attribute template can be used to configure this model:
 
 - `clear-pose` = `slot-pose + slide-offset-mm + lift-offset-mm`
 - `slide-pose` = `slot-pose + slide-offset-mm`
+- `lift-pose` = `slot-pose + lift-offset-mm`
 - `slot-pose` = mechanically engaged
+
+Take traversal: `parking-pose → clear-pose → slide-pose → slot-pose → lift-pose → parking-pose`.
+
+Release traversal: `parking-pose → lift-pose → slot-pose → slide-pose → clear-pose → parking-pose`.
+
+Same four corners, opposite directions: take enters via the slide and exits via the lift so the engaged tool stays engaged; release enters via the lift and exits via the slide so the deposited tool isn't pulled back out.
 
 ### DoCommand
 

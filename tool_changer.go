@@ -93,23 +93,49 @@ func (s *toolChanger) findTool(name string) ToolConfig {
 	return ToolConfig{}
 }
 
-// rackVisitSteps returns the six-step round-trip for visiting one tool's rack
-// slot: parking -> clear -> slide -> slot -> slide -> clear -> parking. The
-// mechanical changer determines whether the visit picks up or releases based
-// on the arm's pre-visit state; the motion is identical either way.
-func (s *toolChanger) rackVisitSteps(tool ToolConfig) []PlanStep {
-	slidePose := Pose{
+// rackPoses returns the three derived poses around a tool's slot:
+// slide-pose (slot + slide), clear-pose (slot + slide + lift), lift-pose
+// (slot + lift). Orientation is taken from slot-pose throughout.
+func (s *toolChanger) rackPoses(tool ToolConfig) (slidePose, clearPose, liftPose Pose) {
+	slidePose = Pose{
 		Point:       tool.SlotPose.Point.Add(tool.SlideOffsetMM),
 		Orientation: tool.SlotPose.Orientation,
 	}
-	clearPose := Pose{
+	clearPose = Pose{
 		Point:       slidePose.Point.Add(tool.LiftOffsetMM),
 		Orientation: tool.SlotPose.Orientation,
 	}
+	liftPose = Pose{
+		Point:       tool.SlotPose.Point.Add(tool.LiftOffsetMM),
+		Orientation: tool.SlotPose.Orientation,
+	}
+	return
+}
+
+// takeSteps returns the 5-step traversal for picking a tool up out of the
+// rack: parking -> clear -> slide -> slot -> lift -> parking. Engagement
+// happens at slot; the arm exits via lift-pose so it doesn't immediately
+// slide back out and disengage.
+func (s *toolChanger) takeSteps(tool ToolConfig) []PlanStep {
+	slidePose, clearPose, liftPose := s.rackPoses(tool)
 	return []PlanStep{
 		{Type: transitInStepType, ToolName: tool.Name, Goal: clearPose, Constraints: s.cfg.TransitConstraints},
 		{Type: liftDownStepType, ToolName: tool.Name, Goal: slidePose, Constraints: s.cfg.LiftConstraints},
 		{Type: slideInStepType, ToolName: tool.Name, Goal: tool.SlotPose, Constraints: s.cfg.SlideConstraints},
+		{Type: liftUpStepType, ToolName: tool.Name, Goal: liftPose, Constraints: s.cfg.LiftConstraints},
+		{Type: transitOutStepType, ToolName: tool.Name, Goal: s.cfg.ParkingPose, Constraints: s.cfg.TransitConstraints},
+	}
+}
+
+// releaseSteps returns the 5-step traversal for putting a tool back in the
+// rack: parking -> lift -> slot -> slide -> clear -> parking. Deposit
+// happens at slot; the arm exits via slide-pose so it doesn't pull the
+// tool back out of the holder it was just deposited into.
+func (s *toolChanger) releaseSteps(tool ToolConfig) []PlanStep {
+	slidePose, clearPose, liftPose := s.rackPoses(tool)
+	return []PlanStep{
+		{Type: transitInStepType, ToolName: tool.Name, Goal: liftPose, Constraints: s.cfg.TransitConstraints},
+		{Type: liftDownStepType, ToolName: tool.Name, Goal: tool.SlotPose, Constraints: s.cfg.LiftConstraints},
 		{Type: slideOutStepType, ToolName: tool.Name, Goal: slidePose, Constraints: s.cfg.SlideConstraints},
 		{Type: liftUpStepType, ToolName: tool.Name, Goal: clearPose, Constraints: s.cfg.LiftConstraints},
 		{Type: transitOutStepType, ToolName: tool.Name, Goal: s.cfg.ParkingPose, Constraints: s.cfg.TransitConstraints},
@@ -146,7 +172,7 @@ func (s *toolChanger) doRelease(ctx context.Context) (map[string]interface{}, er
 		return map[string]interface{}{"success": true, "released": nil}, nil
 	}
 
-	plan, err := s.plan(ctx, s.rackVisitSteps(s.findTool(*cur)), ws)
+	plan, err := s.plan(ctx, s.releaseSteps(s.findTool(*cur)), ws)
 	if err != nil {
 		return nil, fmt.Errorf("release: %w", err)
 	}
@@ -194,9 +220,9 @@ func (s *toolChanger) doSwitchTool(ctx context.Context, v interface{}) (map[stri
 
 	var steps []PlanStep
 	if cur != nil {
-		steps = append(steps, s.rackVisitSteps(s.findTool(*cur))...)
+		steps = append(steps, s.releaseSteps(s.findTool(*cur))...)
 	}
-	steps = append(steps, s.rackVisitSteps(s.findTool(name))...)
+	steps = append(steps, s.takeSteps(s.findTool(name))...)
 
 	plan, err := s.plan(ctx, steps, ws)
 	if err != nil {
