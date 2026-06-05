@@ -107,13 +107,14 @@ func (s *toolChanger) plan(
 }
 
 func (s *toolChanger) execute(ctx context.Context, plan *Plan) error {
+	moveOpts := s.cfg.Speed.MoveOptions()
 	for i := range plan.Steps {
 		step := &plan.Steps[i]
 		armInputs := make([][]referenceframe.Input, len(step.Trajectory))
 		for j, fsInputs := range step.Trajectory {
 			armInputs[j] = fsInputs[s.cfg.Arm]
 		}
-		if err := s.arm.MoveThroughJointPositions(ctx, armInputs, nil, nil); err != nil {
+		if err := s.arm.MoveThroughJointPositions(ctx, armInputs, moveOpts, nil); err != nil {
 			step.Status = failedToExecuteStatus
 			return fmt.Errorf("execute step %q: %w", stepLabel(*step), err)
 		}

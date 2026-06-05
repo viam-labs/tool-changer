@@ -99,6 +99,23 @@ func TestValidate(t *testing.T) {
 			wantErr: "lift-offset-mm is required",
 		},
 		{
+			name:    "negative speed velocity",
+			mutate:  func(c *Config) { c.Speed = &SpeedConfig{MaxVelDegsPerSec: -1} },
+			wantErr: "max_vel_degs_per_sec",
+		},
+		{
+			name:    "negative speed acceleration",
+			mutate:  func(c *Config) { c.Speed = &SpeedConfig{MaxAccDegsPerSec2: -1} },
+			wantErr: "max_acc_degs_per_sec2",
+		},
+		{
+			name: "valid speed config",
+			mutate: func(c *Config) {
+				c.Speed = &SpeedConfig{MaxVelDegsPerSec: 30, MaxAccDegsPerSec2: 60}
+			},
+			wantDeps: []string{"left-arm", framesystem.PublicServiceName.String()},
+		},
+		{
 			name:     "happy path",
 			mutate:   func(c *Config) {},
 			wantDeps: []string{"left-arm", framesystem.PublicServiceName.String()},
