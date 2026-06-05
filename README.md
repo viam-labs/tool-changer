@@ -41,8 +41,8 @@ The following attribute template can be used to configure this model:
 | `arm` | string | Required | Name of the `arm` component this service drives through the rack. The framesystem service is added as an implicit dependency for planning. |
 | `parking-pose` | object | Required | Pose the arm moves to before entering the rack and returns to after a successful change. `orientation` is required. |
 | `tools` | array | Required | One entry per tool slot. Must contain at least one entry. See `tools[]` entries table. |
-| `transit-constraints` | object | Optional | RDK `motionplan.Constraints` applied to moves between `parking-pose` and each tool's `clear-pose`. Defaults to `nil` (free plan). |
-| `lift-constraints` | object | Optional | RDK `motionplan.Constraints` applied to the descent between `clear-pose` and `slide-pose`, and the lift on the reverse. Defaults to `nil` (free plan). |
+| `transit-constraints` | object | Optional | RDK `motionplan.Constraints` applied to moves between `parking-pose` and each tool's rack-side entry/exit pose (`slide-pose` for take entry / `lift-pose` for take exit, and the reverse for release). Defaults to `nil` (free plan). |
+| `lift-constraints` | object | Optional | RDK `motionplan.Constraints` applied to the vertical move between `slot-pose` and `lift-pose` (take exit and release entry). Defaults to `nil` (free plan). |
 | `slide-constraints` | object | Optional | RDK `motionplan.Constraints` applied to the final slide into `slot-pose` and the slide-out on release. Defaults to `nil` (free plan). |
 
 ##### `tools[]` entries
@@ -56,9 +56,15 @@ The following attribute template can be used to configure this model:
 
 #### Rack-side poses
 
-- `clear-pose` = `slot-pose + slide-offset-mm + lift-offset-mm`
 - `slide-pose` = `slot-pose + slide-offset-mm`
+- `lift-pose` = `slot-pose + lift-offset-mm`
 - `slot-pose` = mechanically engaged
+
+Take traversal: `parking-pose → slide-pose → slot-pose → lift-pose → parking-pose`.
+
+Release traversal: `parking-pose → lift-pose → slot-pose → slide-pose → parking-pose`.
+
+Take enters via the slide and exits via the lift so the engaged tool stays engaged; release enters via the lift and exits via the slide so the deposited tool isn't pulled back out.
 
 ### DoCommand
 
