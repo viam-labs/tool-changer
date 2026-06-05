@@ -2,7 +2,7 @@
 
 Viam module providing a generic tool-changer service for swapping end-effectors on a robot arm.
 
-## Model viam-labs:tool-changer:default
+## Model viam:tool-changer:default
 
 A generic service that drives an arm through a tool-changer dock/undock sequence. Only purely mechanical changers are supported — docking and undocking happen as a consequence of how the arm moves through a rack of tool holders. Pneumatic and electrically-actuated changers are not supported today; we're interested in adding support for them.
 
