@@ -117,6 +117,30 @@ func TestValidate(t *testing.T) {
 			wantDeps: []string{"left-arm", framesystem.PublicServiceName.String()},
 		},
 		{
+			name: "tool with gripper",
+			mutate: func(c *Config) {
+				c.Tools[0].Gripper = "tongs-gripper"
+			},
+			wantDeps: []string{"left-arm", framesystem.PublicServiceName.String(), "tongs-gripper"},
+		},
+		{
+			name: "two tools with different grippers",
+			mutate: func(c *Config) {
+				c.Tools[0].Gripper = "tongs-gripper"
+				c.Tools = append(c.Tools, ToolConfig{
+					Name: "spoon",
+					SlotPose: Pose{
+						Point:       r3.Vector{X: 500, Y: -300, Z: 120},
+						Orientation: validOrientation(),
+					},
+					SlideOffsetMM: r3.Vector{X: 100, Y: 0, Z: 0},
+					LiftOffsetMM:  r3.Vector{X: 0, Y: 0, Z: 80},
+					Gripper:       "spoon-gripper",
+				})
+			},
+			wantDeps: []string{"left-arm", framesystem.PublicServiceName.String(), "tongs-gripper", "spoon-gripper"},
+		},
+		{
 			name:     "happy path",
 			mutate:   func(c *Config) {},
 			wantDeps: []string{"left-arm", framesystem.PublicServiceName.String()},
