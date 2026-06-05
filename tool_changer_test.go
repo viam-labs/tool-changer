@@ -28,7 +28,8 @@ func validConfig() *Config {
 					Point:       r3.Vector{X: 450, Y: -300, Z: 120},
 					Orientation: validOrientation(),
 				},
-				ApproachOffsetMM: r3.Vector{X: 0, Y: 0, Z: 80},
+				SlideOffsetMM: r3.Vector{X: 100, Y: 0, Z: 0},
+				LiftOffsetMM:  r3.Vector{X: 0, Y: 0, Z: 80},
 			},
 		},
 	}
@@ -88,9 +89,14 @@ func TestValidate(t *testing.T) {
 			wantErr: "slot-pose.orientation",
 		},
 		{
-			name:    "tool with zero approach-offset",
-			mutate:  func(c *Config) { c.Tools[0].ApproachOffsetMM = r3.Vector{} },
-			wantErr: "approach-offset-mm",
+			name:    "tool with zero slide-offset",
+			mutate:  func(c *Config) { c.Tools[0].SlideOffsetMM = r3.Vector{} },
+			wantErr: "slide-offset-mm is required",
+		},
+		{
+			name:    "tool with zero lift-offset",
+			mutate:  func(c *Config) { c.Tools[0].LiftOffsetMM = r3.Vector{} },
+			wantErr: "lift-offset-mm is required",
 		},
 		{
 			name:     "happy path",
