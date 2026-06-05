@@ -59,3 +59,68 @@ The following attribute template can be used to configure this model:
 - `clear-pose` = `slot-pose + slide-offset-mm + lift-offset-mm`
 - `slide-pose` = `slot-pose + slide-offset-mm`
 - `slot-pose` = mechanically engaged
+
+### DoCommand
+
+`DoCommand` accepts exactly one of the following top-level keys. Any other key returns `unknown command, expected 'switch_tool', 'release', or 'set_world_state'`.
+
+#### `switch_tool`
+
+Idempotently brings the named tool onto the arm. If the named tool is already attached, returns immediately with `changed: false`. Otherwise releases any currently-attached tool, then docks the target. Every step in the sequence is planned upfront against a rolling start state; nothing moves if any step fails to plan.
+
+Request:
+
+```json
+{ "switch_tool": "tongs" }
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "changed": true,
+  "from": null,
+  "to": "tongs"
+}
+```
+
+Errors: `unknown tool "<name>"` if the target isn't in `tools`; `switch_tool: value must be a string` if the value is the wrong type.
+
+#### `release`
+
+Returns the currently-attached tool to its rack slot. No-op when nothing is attached (returns `released: null` without moving).
+
+Request:
+
+```json
+{ "release": true }
+```
+
+Response:
+
+```json
+{ "success": true, "released": "tongs" }
+```
+
+#### `set_world_state`
+
+Stores a `referenceframe.WorldState` for use by all subsequent motion commands. Pass `null` to clear. The stored state is reused across calls; callers update it whenever obstacles change.
+
+Request (set):
+
+```json
+{ "set_world_state": { "obstacles": [ ... ], "transforms": [ ... ] } }
+```
+
+Request (clear):
+
+```json
+{ "set_world_state": null }
+```
+
+Response:
+
+```json
+{ "success": true, "set": true }
+```
