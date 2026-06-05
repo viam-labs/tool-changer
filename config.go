@@ -32,6 +32,7 @@ type ToolConfig struct {
 	SlideOffsetMM          r3.Vector                                                 `json:"slide-offset-mm,omitzero"`
 	LiftOffsetMM           r3.Vector                                                 `json:"lift-offset-mm,omitzero"`
 	SlideAllowedCollisions []motionplan.CollisionSpecificationAllowedFrameCollisions `json:"slide-allowed-collisions,omitempty"`
+	Gripper                string                                                    `json:"gripper,omitempty"`
 }
 
 type Config struct {
@@ -109,7 +110,13 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 		}
 	}
 
-	return []string{c.Arm, framesystem.PublicServiceName.String()}, nil, nil
+	deps := []string{c.Arm, framesystem.PublicServiceName.String()}
+	for _, tool := range c.Tools {
+		if tool.Gripper != "" {
+			deps = append(deps, tool.Gripper)
+		}
+	}
+	return deps, nil, nil
 }
 
 func (t ToolConfig) Validate(path string) error {
