@@ -41,6 +41,7 @@ type Config struct {
 	LiftConstraints    *motionplan.Constraints `json:"lift-constraints,omitempty"`
 	SlideConstraints   *motionplan.Constraints `json:"slide-constraints,omitempty"`
 	SlideSpeed         *SpeedConfig            `json:"slide-speed,omitempty"`
+	SavePlanRequests   bool                    `json:"save-plan-requests,omitempty"`
 }
 
 type SpeedConfig struct {
