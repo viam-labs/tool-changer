@@ -73,7 +73,29 @@ func (s *toolChanger) DoCommand(ctx context.Context, cmd map[string]interface{})
 	if _, ok := cmd["release"]; ok {
 		return s.doRelease(ctx)
 	}
-	return nil, fmt.Errorf("unknown command, expected 'switch_tool', 'release', or 'set_world_state'")
+	if _, ok := cmd["get_status"]; ok {
+		return s.doGetStatus()
+	}
+	return nil, fmt.Errorf("unknown command, expected 'switch_tool', 'release', 'set_world_state', or 'get_status'")
+}
+
+// doGetStatus reports the current attachment state without moving the arm.
+func (s *toolChanger) doGetStatus() (map[string]interface{}, error) {
+	s.mu.Lock()
+	cur := s.currentTool
+	wsSet := s.worldState != nil
+	s.mu.Unlock()
+
+	var current interface{}
+	if cur != nil {
+		current = *cur
+	}
+	return map[string]interface{}{
+		"success":         true,
+		"attached":        cur != nil,
+		"current_tool":    current,
+		"world_state_set": wsSet,
+	}, nil
 }
 
 func (s *toolChanger) knownTool(name string) bool {
