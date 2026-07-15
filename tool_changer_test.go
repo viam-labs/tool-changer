@@ -246,6 +246,27 @@ func TestDoCommand_Release_Empty(t *testing.T) {
 	test.That(t, s.currentTool, test.ShouldBeNil)
 }
 
+func TestDoCommand_GetStatus_Empty(t *testing.T) {
+	s := newTestService()
+	res, err := s.DoCommand(context.Background(), map[string]interface{}{"get_status": true})
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, res["success"], test.ShouldEqual, true)
+	test.That(t, res["attached"], test.ShouldEqual, false)
+	test.That(t, res["current_tool"], test.ShouldBeNil)
+	test.That(t, res["world_state_set"], test.ShouldEqual, false)
+}
+
+func TestDoCommand_GetStatus_Attached(t *testing.T) {
+	s := newTestService()
+	tongs := "tongs"
+	s.currentTool = &tongs
+
+	res, err := s.DoCommand(context.Background(), map[string]interface{}{"get_status": true})
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, res["attached"], test.ShouldEqual, true)
+	test.That(t, res["current_tool"], test.ShouldEqual, "tongs")
+}
+
 func TestMergeSlideConstraints_Nil(t *testing.T) {
 	test.That(t, mergeSlideConstraints(nil, nil), test.ShouldBeNil)
 }

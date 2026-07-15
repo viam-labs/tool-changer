@@ -87,7 +87,7 @@ Take descends onto the tool (engagement on the descent), then slides out with th
 
 ### DoCommand
 
-`DoCommand` accepts exactly one of the following top-level keys. Any other key returns `unknown command, expected 'switch_tool', 'release', or 'set_world_state'`.
+`DoCommand` accepts exactly one of the following top-level keys. Any other key returns `unknown command, expected 'switch_tool', 'release', 'set_world_state', or 'get_status'`.
 
 #### `switch_tool`
 
@@ -149,3 +149,26 @@ Response:
 ```json
 { "success": true, "set": true }
 ```
+
+#### `get_status`
+
+Read-only. Reports whether a tool is currently attached without moving the arm. The value of the key is ignored.
+
+Request:
+
+```json
+{ "get_status": true }
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "attached": true,
+  "current_tool": "tongs",
+  "world_state_set": false
+}
+```
+
+When nothing is attached, `attached` is `false` and `current_tool` is `null`.
