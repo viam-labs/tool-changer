@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"go.viam.com/rdk/components/arm"
+	"go.viam.com/rdk/components/gripper"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/motionplan"
 	"go.viam.com/rdk/referenceframe"
@@ -22,6 +23,7 @@ type toolChanger struct {
 
 	arm       arm.Arm
 	fsService framesystem.Service
+	grippers  map[string]gripper.Gripper
 
 	mu          sync.Mutex
 	currentTool *string
@@ -46,12 +48,25 @@ func newToolChanger(ctx context.Context, deps resource.Dependencies, rawConf res
 		return nil, fmt.Errorf("failed to get framesystem service: %w", err)
 	}
 
+	grippers := make(map[string]gripper.Gripper)
+	for _, tool := range cfg.Tools {
+		if tool.Gripper == "" {
+			continue
+		}
+		g, err := gripper.FromProvider(deps, tool.Gripper)
+		if err != nil {
+			return nil, fmt.Errorf("tool %q: failed to get gripper %q: %w", tool.Name, tool.Gripper, err)
+		}
+		grippers[tool.Name] = g
+	}
+
 	return &toolChanger{
 		name:      rawConf.ResourceName(),
 		logger:    logger,
 		cfg:       cfg,
 		arm:       a,
 		fsService: fs,
+		grippers:  grippers,
 	}, nil
 }
 
@@ -293,6 +308,12 @@ func (s *toolChanger) doSwitchTool(ctx context.Context, v interface{}) (map[stri
 	s.mu.Lock()
 	s.currentTool = &name
 	s.mu.Unlock()
+
+	if g, ok := s.grippers[name]; ok {
+		if _, err := g.DoCommand(ctx, map[string]interface{}{"activate": true}); err != nil {
+			return nil, fmt.Errorf("switch_tool: swapped to %q but gripper activate failed (retry with DoCommand{\"activate\":true} on the gripper): %w", name, err)
+		}
+	}
 
 	return map[string]interface{}{
 		"success": true,

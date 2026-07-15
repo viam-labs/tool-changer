@@ -71,7 +71,7 @@ The following attribute template can be used to configure this model:
 | `slide-offset-mm` | object | Required | Slide direction relative to `slot-pose`. From `slot-pose + slide-offset-mm`, sliding to `slot-pose` is what mechanically engages the tool. Must be non-zero. |
 | `lift-offset-mm` | object | Required | Perpendicular clearance from the rack relative to `slot-pose + slide-offset-mm`. From that point, moving by this further brings the arm fully clear of the rack (typically a vertical lift). Must be non-zero. |
 | `slide-allowed-collisions` | array | Optional | List of `{Frame1, Frame2}` pairs the motion planner is allowed to ignore during this tool's `SlideIn` and `SlideOut` steps. Used to permit the inevitable gripper-tool contact during mechanical engagement. Pairs are not honored on other step types (transit, lift) — those keep full collision checking. Frame identifiers use the standard `<frame_name>:<geometry_label>` form. |
-| `gripper` | string | Optional | Name of a gripper component associated with this tool. Reserved for use by the paired state-store model (forthcoming). When set, the gripper component must be a configured resource on the machine. |
+| `gripper` | string | Optional | Name of a gripper component associated with this tool. When set, the tool-changer sends `{"activate": true}` as a DoCommand to this gripper after a successful `switch_tool`, so callers don't have to re-init the gripper across tool swaps. The component must be a configured resource on the machine. Grippers that don't need activation can implement the DoCommand as a no-op. |
 
 #### Rack-side poses
 
