@@ -73,6 +73,11 @@ func (s *toolChanger) plan(
 	startInputs[s.cfg.Arm] = currentInputs
 	startState := armplanning.NewPlanState(nil, startInputs)
 
+	obstaclesInWorldFrame, err := worldState.ObstaclesInWorldFrame(fs, startInputs)
+	if err != nil {
+		return nil, fmt.Errorf("get obstacles in world frame: %w", err)
+	}
+
 	plan := &Plan{Steps: make([]PlanStep, 0, len(steps))}
 	for _, st := range steps {
 		goalPose := spatialmath.NewPose(st.Goal.Point, st.Goal.Orientation)
@@ -83,11 +88,11 @@ func (s *toolChanger) plan(
 			nil,
 		)
 		req := &armplanning.PlanRequest{
-			FrameSystem: fs,
-			WorldState:  worldState,
-			StartState:  startState,
-			Goals:       []*armplanning.PlanState{goalState},
-			Constraints: st.Constraints,
+			FrameSystem:           fs,
+			ObstaclesInWorldFrame: obstaclesInWorldFrame,
+			StartState:            startState,
+			Goals:                 []*armplanning.PlanState{goalState},
+			Constraints:           st.Constraints,
 		}
 		planStart := time.Now()
 		p, _, err := armplanning.PlanMotion(ctx, s.logger, req)
