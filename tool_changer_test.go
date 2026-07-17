@@ -490,9 +490,12 @@ func TestBuildStepWorldState_IncludesAttachedTool(t *testing.T) {
 	ws, err := s.buildStepWorldState(nil, nil, "spoon")
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, ws, test.ShouldNotBeNil)
-	transforms := ws.Transforms()
-	test.That(t, transforms, test.ShouldHaveLength, 1)
-	test.That(t, transforms[0].Name(), test.ShouldEqual, "spoon")
+	test.That(t, ws.Transforms(), test.ShouldBeEmpty)
+	obs := ws.Obstacles()
+	test.That(t, obs, test.ShouldHaveLength, 1)
+	test.That(t, obs[0].Parent(), test.ShouldEqual, "gripper-1")
+	test.That(t, obs[0].Geometries(), test.ShouldHaveLength, 1)
+	test.That(t, obs[0].Geometries()[0].Label(), test.ShouldEqual, "spoon-body")
 }
 
 func TestBuildStepWorldState_SkipsAttachedToolWithoutGeometry(t *testing.T) {
