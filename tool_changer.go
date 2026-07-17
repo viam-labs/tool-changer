@@ -12,6 +12,7 @@ import (
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot/framesystem"
+	"go.viam.com/rdk/services/worldstatestore"
 )
 
 type toolChanger struct {
@@ -24,6 +25,7 @@ type toolChanger struct {
 	arm       arm.Arm
 	fsService framesystem.Service
 	grippers  map[string]gripper.Gripper
+	wss       worldstatestore.Service
 
 	mu          sync.Mutex
 	currentTool *string
@@ -60,6 +62,14 @@ func newToolChanger(ctx context.Context, deps resource.Dependencies, rawConf res
 		grippers[tool.Name] = g
 	}
 
+	var wss worldstatestore.Service
+	if cfg.WorldStateStore != "" {
+		wss, err = worldstatestore.FromDependencies(deps, cfg.WorldStateStore)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get world state store %q: %w", cfg.WorldStateStore, err)
+		}
+	}
+
 	return &toolChanger{
 		name:      rawConf.ResourceName(),
 		logger:    logger,
@@ -67,6 +77,7 @@ func newToolChanger(ctx context.Context, deps resource.Dependencies, rawConf res
 		arm:       a,
 		fsService: fs,
 		grippers:  grippers,
+		wss:       wss,
 	}, nil
 }
 
@@ -242,10 +253,15 @@ func (s *toolChanger) doRelease(ctx context.Context) (map[string]interface{}, er
 	}
 
 	s.mu.Lock()
+	released := *cur
 	s.currentTool = nil
 	s.mu.Unlock()
 
-	return map[string]interface{}{"success": true, "released": *cur}, nil
+	if err := s.removeAttachedTool(ctx); err != nil {
+		return nil, fmt.Errorf("release: released %q but world_state_store remove failed: %w", released, err)
+	}
+
+	return map[string]interface{}{"success": true, "released": released}, nil
 }
 
 func (s *toolChanger) doSwitchTool(ctx context.Context, v interface{}) (map[string]interface{}, error) {
@@ -313,6 +329,10 @@ func (s *toolChanger) doSwitchTool(ctx context.Context, v interface{}) (map[stri
 		if _, err := g.DoCommand(ctx, map[string]interface{}{"activate": true}); err != nil {
 			return nil, fmt.Errorf("switch_tool: swapped to %q but gripper activate failed (retry with DoCommand{\"activate\":true} on the gripper): %w", name, err)
 		}
+	}
+
+	if err := s.publishAttachedTool(ctx, s.findTool(name)); err != nil {
+		return nil, fmt.Errorf("switch_tool: swapped to %q but world_state_store publish failed: %w", name, err)
 	}
 
 	return map[string]interface{}{

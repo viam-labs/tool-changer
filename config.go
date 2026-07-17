@@ -33,6 +33,9 @@ type ToolConfig struct {
 	LiftOffsetMM           r3.Vector                                                 `json:"lift-offset-mm,omitzero"`
 	SlideAllowedCollisions []motionplan.CollisionSpecificationAllowedFrameCollisions `json:"slide-allowed-collisions,omitempty"`
 	Gripper                string                                                    `json:"gripper,omitempty"`
+	Geometry               *spatialmath.GeometryConfig                               `json:"geometry,omitempty"`
+	AttachFrame            string                                                    `json:"attach-frame,omitempty"`
+	AttachPose             *Pose                                                     `json:"attach-pose,omitempty"`
 }
 
 type Config struct {
@@ -44,6 +47,7 @@ type Config struct {
 	SlideConstraints   *motionplan.Constraints `json:"slide-constraints,omitempty"`
 	SlideSpeed         *SpeedConfig            `json:"slide-speed,omitempty"`
 	SavePlanRequests   bool                    `json:"save-plan-requests,omitempty"`
+	WorldStateStore    string                  `json:"world-state-store,omitempty"`
 }
 
 type SpeedConfig struct {
@@ -116,6 +120,9 @@ func (c *Config) Validate(path string) ([]string, []string, error) {
 			deps = append(deps, tool.Gripper)
 		}
 	}
+	if c.WorldStateStore != "" {
+		deps = append(deps, c.WorldStateStore)
+	}
 	return deps, nil, nil
 }
 
@@ -134,6 +141,25 @@ func (t ToolConfig) Validate(path string) error {
 	}
 	if t.LiftOffsetMM == (r3.Vector{}) {
 		return fmt.Errorf("%s: lift-offset-mm is required and must be non-zero", path)
+	}
+	if t.Geometry != nil {
+		if t.AttachFrame == "" {
+			return fmt.Errorf("%s: attach-frame is required when geometry is set", path)
+		}
+		if _, err := t.Geometry.ParseConfig(); err != nil {
+			return fmt.Errorf("%s: geometry: %w", path, err)
+		}
+	}
+	if t.AttachFrame != "" && t.Geometry == nil {
+		return fmt.Errorf("%s: attach-frame set without geometry", path)
+	}
+	if t.AttachPose != nil {
+		if t.AttachPose.Orientation == nil {
+			return resource.NewConfigValidationFieldRequiredError(path, "attach-pose.orientation")
+		}
+		if err := t.AttachPose.Orientation.IsValid(); err != nil {
+			return fmt.Errorf("%s: attach-pose.orientation: %w", path, err)
+		}
 	}
 	return nil
 }
