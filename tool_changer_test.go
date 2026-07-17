@@ -8,11 +8,15 @@ import (
 
 	"github.com/golang/geo/r3"
 	commonpb "go.viam.com/api/common/v1"
+	"go.viam.com/rdk/components/arm"
+	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/motionplan"
+	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot/framesystem"
 	"go.viam.com/rdk/services/worldstatestore"
 	"go.viam.com/rdk/spatialmath"
+	"go.viam.com/rdk/testutils/inject"
 	"go.viam.com/test"
 )
 
@@ -557,4 +561,150 @@ func TestFetchAggregatorTransforms_NoStore(t *testing.T) {
 	got, err := s.fetchAggregatorTransforms(context.Background())
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, got, test.ShouldBeEmpty)
+}
+
+func TestReflectAttachTransition_NoOpWhenUnchanged(t *testing.T) {
+	s, f := newTestServiceWithWSS(t)
+	err := s.reflectAttachTransition(context.Background(), "spoon", "spoon")
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, f.recorded(), test.ShouldBeEmpty)
+
+	err = s.reflectAttachTransition(context.Background(), "", "")
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, f.recorded(), test.ShouldBeEmpty)
+}
+
+func TestReflectAttachTransition_PublishOnAttach(t *testing.T) {
+	s, f := newTestServiceWithWSS(t)
+	s.cfg.Tools = []ToolConfig{spoonToolWithGeometry()}
+	err := s.reflectAttachTransition(context.Background(), "", "spoon")
+	test.That(t, err, test.ShouldBeNil)
+
+	calls := f.recorded()
+	test.That(t, calls, test.ShouldHaveLength, 1)
+	_, hasSet := calls[0]["set_transform"]
+	test.That(t, hasSet, test.ShouldBeTrue)
+}
+
+func TestReflectAttachTransition_RemoveOnDetach(t *testing.T) {
+	s, f := newTestServiceWithWSS(t)
+	err := s.reflectAttachTransition(context.Background(), "spoon", "")
+	test.That(t, err, test.ShouldBeNil)
+
+	calls := f.recorded()
+	test.That(t, calls, test.ShouldHaveLength, 1)
+	_, hasRm := calls[0]["remove_transform"]
+	test.That(t, hasRm, test.ShouldBeTrue)
+}
+
+func TestReflectAttachTransition_SwapRemovesThenPublishes(t *testing.T) {
+	s, f := newTestServiceWithWSS(t)
+	s.cfg.Tools = []ToolConfig{spoonToolWithGeometry()}
+	err := s.reflectAttachTransition(context.Background(), "old", "spoon")
+	test.That(t, err, test.ShouldBeNil)
+
+	calls := f.recorded()
+	test.That(t, calls, test.ShouldHaveLength, 2)
+	_, firstIsRemove := calls[0]["remove_transform"]
+	_, secondIsSet := calls[1]["set_transform"]
+	test.That(t, firstIsRemove, test.ShouldBeTrue)
+	test.That(t, secondIsSet, test.ShouldBeTrue)
+}
+
+func newInjectArm(record *[]string) *inject.Arm {
+	a := &inject.Arm{}
+	a.MoveThroughJointPositionsFunc = func(_ context.Context, _ [][]referenceframe.Input, _ *arm.MoveOptions, _ map[string]any) error {
+		*record = append(*record, "move")
+		return nil
+	}
+	return a
+}
+
+func newExecTestService(t *testing.T) (*toolChanger, *fakeWSS, *[]string) {
+	t.Helper()
+	f := &fakeWSS{}
+	var moves []string
+	s := &toolChanger{
+		name:   resource.NewName(resource.APINamespace("viam").WithType("service").WithSubtype("generic"), "mychanger"),
+		logger: logging.NewTestLogger(t),
+		cfg:    &Config{Arm: "left-arm", Tools: []ToolConfig{spoonToolWithGeometry()}},
+		arm:    newInjectArm(&moves),
+		wss:    f,
+	}
+	return s, f, &moves
+}
+
+func planFromSteps(steps []PlanStep) *Plan {
+	return &Plan{Steps: steps}
+}
+
+func TestExecute_TakeSequencePublishesOnce(t *testing.T) {
+	s, f, moves := newExecTestService(t)
+	plan := planFromSteps(s.takeSteps(s.cfg.Tools[0]))
+	motionErr, storeErr := s.execute(context.Background(), plan)
+	test.That(t, motionErr, test.ShouldBeNil)
+	test.That(t, storeErr, test.ShouldBeNil)
+	test.That(t, len(*moves), test.ShouldEqual, 4)
+
+	calls := f.recorded()
+	test.That(t, calls, test.ShouldHaveLength, 1)
+	_, hasSet := calls[0]["set_transform"]
+	test.That(t, hasSet, test.ShouldBeTrue)
+}
+
+func TestExecute_ReleaseSequenceRemovesOnce(t *testing.T) {
+	s, f, moves := newExecTestService(t)
+	plan := planFromSteps(s.releaseSteps(s.cfg.Tools[0]))
+	motionErr, storeErr := s.execute(context.Background(), plan)
+	test.That(t, motionErr, test.ShouldBeNil)
+	test.That(t, storeErr, test.ShouldBeNil)
+	test.That(t, len(*moves), test.ShouldEqual, 4)
+
+	calls := f.recorded()
+	test.That(t, calls, test.ShouldHaveLength, 1)
+	_, hasRm := calls[0]["remove_transform"]
+	test.That(t, hasRm, test.ShouldBeTrue)
+}
+
+func TestExecute_SwitchSequenceRemovesThenPublishes(t *testing.T) {
+	s, f, moves := newExecTestService(t)
+	steps := append(s.releaseSteps(s.cfg.Tools[0]), s.takeSteps(s.cfg.Tools[0])...)
+	motionErr, storeErr := s.execute(context.Background(), planFromSteps(steps))
+	test.That(t, motionErr, test.ShouldBeNil)
+	test.That(t, storeErr, test.ShouldBeNil)
+	test.That(t, len(*moves), test.ShouldEqual, 8)
+
+	calls := f.recorded()
+	test.That(t, calls, test.ShouldHaveLength, 2)
+	_, firstIsRm := calls[0]["remove_transform"]
+	_, secondIsSet := calls[1]["set_transform"]
+	test.That(t, firstIsRm, test.ShouldBeTrue)
+	test.That(t, secondIsSet, test.ShouldBeTrue)
+}
+
+func TestExecute_StoreErrorLoggedButMotionContinues(t *testing.T) {
+	s, f, moves := newExecTestService(t)
+	f.errToRet = errors.New("boom")
+	steps := s.takeSteps(s.cfg.Tools[0])
+	motionErr, storeErr := s.execute(context.Background(), planFromSteps(steps))
+	test.That(t, motionErr, test.ShouldBeNil)
+	test.That(t, storeErr, test.ShouldNotBeNil)
+	test.That(t, storeErr.Error(), test.ShouldContainSubstring, "boom")
+	test.That(t, len(*moves), test.ShouldEqual, 4)
+
+	for _, st := range steps {
+		test.That(t, st.Status, test.ShouldNotEqual, failedToExecuteStatus)
+	}
+}
+
+func TestExecute_MotionErrorAborts(t *testing.T) {
+	s, _, _ := newExecTestService(t)
+	s.arm.(*inject.Arm).MoveThroughJointPositionsFunc = func(_ context.Context, _ [][]referenceframe.Input, _ *arm.MoveOptions, _ map[string]any) error {
+		return errors.New("motion fail")
+	}
+	steps := s.takeSteps(s.cfg.Tools[0])
+	plan := planFromSteps(steps)
+	motionErr, _ := s.execute(context.Background(), plan)
+	test.That(t, motionErr, test.ShouldNotBeNil)
+	test.That(t, motionErr.Error(), test.ShouldContainSubstring, "motion fail")
 }

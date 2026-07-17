@@ -237,19 +237,19 @@ func (s *toolChanger) doRelease(ctx context.Context) (map[string]interface{}, er
 	}
 
 	plan, planErr := s.plan(ctx, s.releaseSteps(s.findTool(*cur)), ws)
-	var execErr error
+	var motionErr, storeErr error
 	if planErr == nil {
-		execErr = s.execute(ctx, plan)
+		motionErr, storeErr = s.execute(ctx, plan)
 	}
-	finalErr := planErr
-	if finalErr == nil {
-		finalErr = execErr
+	finalMotionErr := planErr
+	if finalMotionErr == nil {
+		finalMotionErr = motionErr
 	}
 	if s.cfg.SavePlanRequests {
-		s.savePlanRequests(plan, "release", *cur, "", finalErr)
+		s.savePlanRequests(plan, "release", *cur, "", finalMotionErr)
 	}
-	if finalErr != nil {
-		return nil, fmt.Errorf("release: %w", finalErr)
+	if finalMotionErr != nil {
+		return nil, fmt.Errorf("release: %w", finalMotionErr)
 	}
 
 	s.mu.Lock()
@@ -257,8 +257,8 @@ func (s *toolChanger) doRelease(ctx context.Context) (map[string]interface{}, er
 	s.currentTool = nil
 	s.mu.Unlock()
 
-	if err := s.removeAttachedTool(ctx); err != nil {
-		return nil, fmt.Errorf("release: released %q but world_state_store remove failed: %w", released, err)
+	if storeErr != nil {
+		return nil, fmt.Errorf("release: released %q but world_state_store update failed: %w", released, storeErr)
 	}
 
 	return map[string]interface{}{"success": true, "released": released}, nil
@@ -302,23 +302,23 @@ func (s *toolChanger) doSwitchTool(ctx context.Context, v interface{}) (map[stri
 	steps = append(steps, s.takeSteps(s.findTool(name))...)
 
 	plan, planErr := s.plan(ctx, steps, ws)
-	var execErr error
+	var motionErr, storeErr error
 	if planErr == nil {
-		execErr = s.execute(ctx, plan)
+		motionErr, storeErr = s.execute(ctx, plan)
 	}
-	finalErr := planErr
-	if finalErr == nil {
-		finalErr = execErr
+	finalMotionErr := planErr
+	if finalMotionErr == nil {
+		finalMotionErr = motionErr
 	}
 	if s.cfg.SavePlanRequests {
 		fromName := ""
 		if cur != nil {
 			fromName = *cur
 		}
-		s.savePlanRequests(plan, "switch_tool", fromName, name, finalErr)
+		s.savePlanRequests(plan, "switch_tool", fromName, name, finalMotionErr)
 	}
-	if finalErr != nil {
-		return nil, fmt.Errorf("switch_tool: %w", finalErr)
+	if finalMotionErr != nil {
+		return nil, fmt.Errorf("switch_tool: %w", finalMotionErr)
 	}
 
 	s.mu.Lock()
@@ -331,8 +331,8 @@ func (s *toolChanger) doSwitchTool(ctx context.Context, v interface{}) (map[stri
 		}
 	}
 
-	if err := s.publishAttachedTool(ctx, s.findTool(name)); err != nil {
-		return nil, fmt.Errorf("switch_tool: swapped to %q but world_state_store publish failed: %w", name, err)
+	if storeErr != nil {
+		return nil, fmt.Errorf("switch_tool: swapped to %q but world_state_store update failed: %w", name, storeErr)
 	}
 
 	return map[string]interface{}{
