@@ -2,11 +2,16 @@ package toolchanger
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"testing"
 
 	"github.com/golang/geo/r3"
+	commonpb "go.viam.com/api/common/v1"
 	"go.viam.com/rdk/motionplan"
+	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot/framesystem"
+	"go.viam.com/rdk/services/worldstatestore"
 	"go.viam.com/rdk/spatialmath"
 	"go.viam.com/test"
 )
@@ -303,4 +308,148 @@ func TestMergeSlideConstraints_BaseAndAllowed(t *testing.T) {
 
 	// Base must not have been mutated.
 	test.That(t, len(base.CollisionSpecification), test.ShouldEqual, 1)
+}
+
+type fakeWSS struct {
+	resource.Named
+	resource.TriviallyReconfigurable
+	resource.TriviallyCloseable
+	mu       sync.Mutex
+	calls    []map[string]interface{}
+	errToRet error
+}
+
+func (f *fakeWSS) DoCommand(_ context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, cmd)
+	return nil, f.errToRet
+}
+
+func (f *fakeWSS) ListUUIDs(context.Context, map[string]any) ([][]byte, error) {
+	return nil, nil
+}
+
+func (f *fakeWSS) GetTransform(context.Context, []byte, map[string]any) (*commonpb.Transform, error) {
+	return nil, worldstatestore.ErrNilResponse
+}
+
+func (f *fakeWSS) StreamTransformChanges(context.Context, map[string]any) (*worldstatestore.TransformChangeStream, error) {
+	return nil, nil
+}
+
+func (f *fakeWSS) recorded() []map[string]interface{} {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]map[string]interface{}, len(f.calls))
+	copy(out, f.calls)
+	return out
+}
+
+func spoonToolWithGeometry() ToolConfig {
+	return ToolConfig{
+		Name:          "spoon",
+		SlotPose:      Pose{Point: r3.Vector{X: 400, Y: 0, Z: 100}, Orientation: validOrientation()},
+		SlideOffsetMM: r3.Vector{X: 100, Y: 0, Z: 0},
+		LiftOffsetMM:  r3.Vector{X: 0, Y: 0, Z: 80},
+		AttachFrame:   "gripper-1",
+		Geometry: &spatialmath.GeometryConfig{
+			Type:  "box",
+			X:     30,
+			Y:     30,
+			Z:     200,
+			Label: "spoon-body",
+		},
+	}
+}
+
+func newTestServiceWithWSS(t *testing.T) (*toolChanger, *fakeWSS) {
+	t.Helper()
+	f := &fakeWSS{}
+	s := &toolChanger{
+		name: resource.NewName(resource.APINamespace("viam").WithType("service").WithSubtype("generic"), "mychanger"),
+		cfg:  validConfig(),
+		wss:  f,
+	}
+	return s, f
+}
+
+func TestBuildSetTransformPayload_ShapeAndUUID(t *testing.T) {
+	tool := spoonToolWithGeometry()
+	payload, err := buildSetTransformPayload("tool-changer/mychanger/attached", tool)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, payload["uuid"], test.ShouldEqual, "tool-changer/mychanger/attached")
+	test.That(t, payload["reference_frame"], test.ShouldEqual, "spoon")
+	pif, ok := payload["pose_in_observer_frame"].(map[string]interface{})
+	test.That(t, ok, test.ShouldBeTrue)
+	test.That(t, pif["reference_frame"], test.ShouldEqual, "gripper-1")
+	_, hasGeom := payload["physical_object"]
+	test.That(t, hasGeom, test.ShouldBeTrue)
+}
+
+func TestBuildSetTransformPayload_UsesConfiguredAttachPose(t *testing.T) {
+	tool := spoonToolWithGeometry()
+	tool.AttachPose = &Pose{
+		Point:       r3.Vector{X: 10, Y: 20, Z: 30},
+		Orientation: validOrientation(),
+	}
+	payload, err := buildSetTransformPayload("u", tool)
+	test.That(t, err, test.ShouldBeNil)
+	pif := payload["pose_in_observer_frame"].(map[string]interface{})
+	pose := pif["pose"].(map[string]interface{})
+	test.That(t, pose["x"], test.ShouldEqual, 10.0)
+	test.That(t, pose["y"], test.ShouldEqual, 20.0)
+	test.That(t, pose["z"], test.ShouldEqual, 30.0)
+}
+
+func TestPublishAttachedTool_NoStore(t *testing.T) {
+	s := newTestService()
+	err := s.publishAttachedTool(context.Background(), spoonToolWithGeometry())
+	test.That(t, err, test.ShouldBeNil)
+}
+
+func TestPublishAttachedTool_NoGeometry(t *testing.T) {
+	s, f := newTestServiceWithWSS(t)
+	err := s.publishAttachedTool(context.Background(), s.cfg.Tools[0])
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, f.recorded(), test.ShouldBeEmpty)
+}
+
+func TestPublishAttachedTool_SendsSetTransform(t *testing.T) {
+	s, f := newTestServiceWithWSS(t)
+	err := s.publishAttachedTool(context.Background(), spoonToolWithGeometry())
+	test.That(t, err, test.ShouldBeNil)
+
+	calls := f.recorded()
+	test.That(t, calls, test.ShouldHaveLength, 1)
+	set, ok := calls[0]["set_transform"].(map[string]interface{})
+	test.That(t, ok, test.ShouldBeTrue)
+	test.That(t, set["uuid"], test.ShouldEqual, "tool-changer/mychanger/attached")
+	test.That(t, set["reference_frame"], test.ShouldEqual, "spoon")
+}
+
+func TestPublishAttachedTool_PropagatesStoreError(t *testing.T) {
+	s, f := newTestServiceWithWSS(t)
+	f.errToRet = errors.New("boom")
+	err := s.publishAttachedTool(context.Background(), spoonToolWithGeometry())
+	test.That(t, err, test.ShouldNotBeNil)
+	test.That(t, err.Error(), test.ShouldContainSubstring, "boom")
+}
+
+func TestRemoveAttachedTool_NoStore(t *testing.T) {
+	s := newTestService()
+	err := s.removeAttachedTool(context.Background())
+	test.That(t, err, test.ShouldBeNil)
+}
+
+func TestRemoveAttachedTool_SendsRemoveTransform(t *testing.T) {
+	s, f := newTestServiceWithWSS(t)
+	err := s.removeAttachedTool(context.Background())
+	test.That(t, err, test.ShouldBeNil)
+
+	calls := f.recorded()
+	test.That(t, calls, test.ShouldHaveLength, 1)
+	rm, ok := calls[0]["remove_transform"].(map[string]interface{})
+	test.That(t, ok, test.ShouldBeTrue)
+	test.That(t, rm["uuid"], test.ShouldEqual, "tool-changer/mychanger/attached")
 }
