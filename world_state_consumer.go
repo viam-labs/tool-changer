@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	commonpb "go.viam.com/api/common/v1"
 	"go.viam.com/rdk/referenceframe"
@@ -16,6 +17,15 @@ func (s *toolChanger) fetchAggregatorTransforms(ctx context.Context) ([]*commonp
 	}
 	uuids, err := s.wss.ListUUIDs(ctx, nil)
 	if err != nil {
+		// The world_state_store server treats an empty store as an error
+		// (ErrNilResponse). When that error crosses gRPC it becomes a
+		// *status.Error and loses its sentinel identity, so errors.Is no
+		// longer matches. Fall back to a message-text check so an empty
+		// store surfaces as "no transforms" rather than a failed switch.
+		if errors.Is(err, worldstatestore.ErrNilResponse) ||
+			strings.Contains(err.Error(), worldstatestore.ErrNilResponse.Error()) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	own := s.attachedUUID()

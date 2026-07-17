@@ -119,7 +119,13 @@ func (s *toolChanger) plan(
 	return plan, nil
 }
 
-func (s *toolChanger) execute(ctx context.Context, plan *Plan) error {
+// execute runs the trajectory for each PlanStep and, between steps, publishes
+// or removes the attached-tool transform to the world state store based on
+// PlanStep.AttachedTool transitions. Returns (motionErr, storeErr) separately:
+// motion errors abort the sequence and should skip state updates upstream;
+// store errors are logged but do not abort motion, so the arm reaches a safe
+// end pose even when the store is temporarily unreachable.
+func (s *toolChanger) execute(ctx context.Context, plan *Plan) (motionErr, storeErr error) {
 	slideOpts := s.cfg.SlideSpeed.MoveOptions()
 	for i := range plan.Steps {
 		step := &plan.Steps[i]
@@ -133,9 +139,36 @@ func (s *toolChanger) execute(ctx context.Context, plan *Plan) error {
 		}
 		if err := s.arm.MoveThroughJointPositions(ctx, armInputs, opts, nil); err != nil {
 			step.Status = failedToExecuteStatus
-			return fmt.Errorf("execute step %q: %w", stepLabel(*step), err)
+			return fmt.Errorf("execute step %q: %w", stepLabel(*step), err), storeErr
 		}
 		step.Status = executedStatus
+
+		if i+1 < len(plan.Steps) {
+			if err := s.reflectAttachTransition(ctx, step.AttachedTool, plan.Steps[i+1].AttachedTool); err != nil {
+				s.logger.CWarnw(ctx, "world state store update failed; motion continues",
+					"error", err, "after_step", stepLabel(*step))
+				if storeErr == nil {
+					storeErr = err
+				}
+			}
+		}
+	}
+	return nil, storeErr
+}
+
+func (s *toolChanger) reflectAttachTransition(ctx context.Context, prev, next string) error {
+	if prev == next {
+		return nil
+	}
+	if prev != "" {
+		if err := s.removeAttachedTool(ctx); err != nil {
+			return fmt.Errorf("remove attached tool %q: %w", prev, err)
+		}
+	}
+	if next != "" {
+		if err := s.publishAttachedTool(ctx, s.findTool(next)); err != nil {
+			return fmt.Errorf("publish attached tool %q: %w", next, err)
+		}
 	}
 	return nil
 }
