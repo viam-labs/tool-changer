@@ -11,16 +11,13 @@ import (
 	"go.viam.com/rdk/motionplan/armplanning"
 )
 
-// newPlanRequestForSaving returns a copy of req with WorldState stripped.
-// Matches sanding's NewPlanRequestForSaving — world-state payloads can be
-// large and belong to a future SaveWorldStates field rather than being
-// duplicated into every per-step record.
 func newPlanRequestForSaving(req *armplanning.PlanRequest) *armplanning.PlanRequest {
 	if req == nil {
 		return nil
 	}
 	return &armplanning.PlanRequest{
 		FrameSystem:    req.FrameSystem,
+		WorldState:     req.WorldState,
 		Goals:          req.Goals,
 		StartState:     req.StartState,
 		Constraints:    req.Constraints,

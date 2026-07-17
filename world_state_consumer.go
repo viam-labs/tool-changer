@@ -9,6 +9,7 @@ import (
 	commonpb "go.viam.com/api/common/v1"
 	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/services/worldstatestore"
+	"go.viam.com/rdk/spatialmath"
 )
 
 func (s *toolChanger) fetchAggregatorTransforms(ctx context.Context) ([]*commonpb.Transform, error) {
@@ -61,11 +62,11 @@ func (s *toolChanger) buildStepWorldState(
 	if attachedTool != "" {
 		tool := s.findTool(attachedTool)
 		if tool.Geometry != nil {
-			t, err := buildAttachedTransform(s.attachedUUID(), tool)
+			gif, err := buildAttachedObstacle(tool)
 			if err != nil {
 				return nil, err
 			}
-			merged.Transforms = append(merged.Transforms, t)
+			merged.Obstacles = append(merged.Obstacles, gif)
 		}
 	}
 
@@ -73,4 +74,21 @@ func (s *toolChanger) buildStepWorldState(
 		return nil, nil
 	}
 	return referenceframe.WorldStateFromProtobuf(merged)
+}
+
+func buildAttachedObstacle(tool ToolConfig) (*commonpb.GeometriesInFrame, error) {
+	geoProto, err := tool.Geometry.ToProtobuf()
+	if err != nil {
+		return nil, fmt.Errorf("tool %q: geometry: %w", tool.Name, err)
+	}
+	attach := spatialmath.NewPoseFromProtobuf(attachPose(tool))
+	var existing spatialmath.Pose = spatialmath.NewZeroPose()
+	if geoProto.GetCenter() != nil {
+		existing = spatialmath.NewPoseFromProtobuf(geoProto.GetCenter())
+	}
+	geoProto.Center = spatialmath.PoseToProtobuf(spatialmath.Compose(attach, existing))
+	return &commonpb.GeometriesInFrame{
+		ReferenceFrame: tool.AttachFrame,
+		Geometries:     []*commonpb.Geometry{geoProto},
+	}, nil
 }
