@@ -453,3 +453,108 @@ func TestRemoveAttachedTool_SendsRemoveTransform(t *testing.T) {
 	test.That(t, ok, test.ShouldBeTrue)
 	test.That(t, rm["uuid"], test.ShouldEqual, "tool-changer/mychanger/attached")
 }
+
+func TestTakeSteps_AttachedToolAfterEngagement(t *testing.T) {
+	s := &toolChanger{cfg: validConfig()}
+	steps := s.takeSteps(s.cfg.Tools[0])
+	test.That(t, steps, test.ShouldHaveLength, 4)
+	test.That(t, steps[0].AttachedTool, test.ShouldEqual, "") // transit-in, empty
+	test.That(t, steps[1].AttachedTool, test.ShouldEqual, "") // lift-down, still empty
+	test.That(t, steps[2].AttachedTool, test.ShouldEqual, "tongs")
+	test.That(t, steps[3].AttachedTool, test.ShouldEqual, "tongs")
+}
+
+func TestReleaseSteps_AttachedToolBeforeDeposit(t *testing.T) {
+	s := &toolChanger{cfg: validConfig()}
+	steps := s.releaseSteps(s.cfg.Tools[0])
+	test.That(t, steps, test.ShouldHaveLength, 4)
+	test.That(t, steps[0].AttachedTool, test.ShouldEqual, "tongs")
+	test.That(t, steps[1].AttachedTool, test.ShouldEqual, "tongs")
+	test.That(t, steps[2].AttachedTool, test.ShouldEqual, "") // lift-up, dropped
+	test.That(t, steps[3].AttachedTool, test.ShouldEqual, "") // transit-out
+}
+
+func TestBuildStepWorldState_NilWhenEmpty(t *testing.T) {
+	s := newTestService()
+	ws, err := s.buildStepWorldState(nil, nil, "")
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ws, test.ShouldBeNil)
+}
+
+func TestBuildStepWorldState_IncludesAttachedTool(t *testing.T) {
+	s := &toolChanger{cfg: &Config{Tools: []ToolConfig{spoonToolWithGeometry()}}, name: resource.NewName(resource.APINamespace("viam").WithType("service").WithSubtype("generic"), "mychanger")}
+	ws, err := s.buildStepWorldState(nil, nil, "spoon")
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ws, test.ShouldNotBeNil)
+	transforms := ws.Transforms()
+	test.That(t, transforms, test.ShouldHaveLength, 1)
+	test.That(t, transforms[0].Name(), test.ShouldEqual, "spoon")
+}
+
+func TestBuildStepWorldState_SkipsAttachedToolWithoutGeometry(t *testing.T) {
+	s := newTestService()
+	ws, err := s.buildStepWorldState(nil, nil, "tongs")
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ws, test.ShouldBeNil)
+}
+
+func TestBuildStepWorldState_MergesAggregatorTransforms(t *testing.T) {
+	s := newTestService()
+	agg := []*commonpb.Transform{
+		{
+			ReferenceFrame: "external",
+			PoseInObserverFrame: &commonpb.PoseInFrame{
+				ReferenceFrame: "world",
+				Pose:           &commonpb.Pose{OZ: 1},
+			},
+			Uuid: []byte("some-other"),
+		},
+	}
+	ws, err := s.buildStepWorldState(nil, agg, "")
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, ws, test.ShouldNotBeNil)
+	test.That(t, ws.Transforms(), test.ShouldHaveLength, 1)
+}
+
+type stubWSS struct {
+	fakeWSS
+	uuids [][]byte
+	byID  map[string]*commonpb.Transform
+}
+
+func (s *stubWSS) ListUUIDs(context.Context, map[string]any) ([][]byte, error) {
+	return s.uuids, nil
+}
+
+func (s *stubWSS) GetTransform(_ context.Context, uuid []byte, _ map[string]any) (*commonpb.Transform, error) {
+	if t, ok := s.byID[string(uuid)]; ok {
+		return t, nil
+	}
+	return nil, worldstatestore.ErrNilResponse
+}
+
+func TestFetchAggregatorTransforms_FiltersOwnAttachedUUID(t *testing.T) {
+	stub := &stubWSS{
+		uuids: [][]byte{[]byte("tool-changer/mychanger/attached"), []byte("other-uuid")},
+		byID: map[string]*commonpb.Transform{
+			"tool-changer/mychanger/attached": {ReferenceFrame: "spoon"},
+			"other-uuid":                      {ReferenceFrame: "workpiece"},
+		},
+	}
+	s := &toolChanger{
+		name: resource.NewName(resource.APINamespace("viam").WithType("service").WithSubtype("generic"), "mychanger"),
+		cfg:  validConfig(),
+		wss:  stub,
+	}
+	got, err := s.fetchAggregatorTransforms(context.Background())
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, got, test.ShouldHaveLength, 1)
+	test.That(t, got[0].ReferenceFrame, test.ShouldEqual, "workpiece")
+}
+
+func TestFetchAggregatorTransforms_NoStore(t *testing.T) {
+	s := newTestService()
+	got, err := s.fetchAggregatorTransforms(context.Background())
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, got, test.ShouldBeEmpty)
+}

@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"sync"
 
+	commonpb "go.viam.com/api/common/v1"
 	"go.viam.com/rdk/components/arm"
 	"go.viam.com/rdk/components/gripper"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/motionplan"
-	"go.viam.com/rdk/referenceframe"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/rdk/robot/framesystem"
 	"go.viam.com/rdk/services/worldstatestore"
@@ -29,7 +29,7 @@ type toolChanger struct {
 
 	mu          sync.Mutex
 	currentTool *string
-	worldState  *referenceframe.WorldState
+	worldState  *commonpb.WorldState
 
 	motionMu sync.Mutex
 }
@@ -186,8 +186,8 @@ func (s *toolChanger) takeSteps(tool ToolConfig) []PlanStep {
 	return []PlanStep{
 		{Type: transitInStepType, ToolName: tool.Name, Goal: liftPose, Constraints: s.cfg.TransitConstraints},
 		{Type: liftDownStepType, ToolName: tool.Name, Goal: tool.SlotPose, Constraints: s.cfg.LiftConstraints},
-		{Type: slideOutStepType, ToolName: tool.Name, Goal: slidePose, Constraints: slideConstraints},
-		{Type: transitOutStepType, ToolName: tool.Name, Goal: s.cfg.ParkingPose, Constraints: s.cfg.TransitConstraints},
+		{Type: slideOutStepType, ToolName: tool.Name, AttachedTool: tool.Name, Goal: slidePose, Constraints: slideConstraints},
+		{Type: transitOutStepType, ToolName: tool.Name, AttachedTool: tool.Name, Goal: s.cfg.ParkingPose, Constraints: s.cfg.TransitConstraints},
 	}
 }
 
@@ -199,8 +199,8 @@ func (s *toolChanger) releaseSteps(tool ToolConfig) []PlanStep {
 	slidePose, liftPose := s.rackPoses(tool)
 	slideConstraints := mergeSlideConstraints(s.cfg.SlideConstraints, tool.SlideAllowedCollisions)
 	return []PlanStep{
-		{Type: transitInStepType, ToolName: tool.Name, Goal: slidePose, Constraints: s.cfg.TransitConstraints},
-		{Type: slideInStepType, ToolName: tool.Name, Goal: tool.SlotPose, Constraints: slideConstraints},
+		{Type: transitInStepType, ToolName: tool.Name, AttachedTool: tool.Name, Goal: slidePose, Constraints: s.cfg.TransitConstraints},
+		{Type: slideInStepType, ToolName: tool.Name, AttachedTool: tool.Name, Goal: tool.SlotPose, Constraints: slideConstraints},
 		{Type: liftUpStepType, ToolName: tool.Name, Goal: liftPose, Constraints: s.cfg.LiftConstraints},
 		{Type: transitOutStepType, ToolName: tool.Name, Goal: s.cfg.ParkingPose, Constraints: s.cfg.TransitConstraints},
 	}
