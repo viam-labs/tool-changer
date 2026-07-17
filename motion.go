@@ -34,6 +34,7 @@ const (
 type PlanStep struct {
 	Type         string                   `json:"type"`
 	ToolName     string                   `json:"tool_name,omitempty"`
+	AttachedTool string                   `json:"attached_tool,omitempty"`
 	Goal         Pose                     `json:"goal"`
 	Constraints  *motionplan.Constraints  `json:"constraints,omitempty"`
 	Request      *armplanning.PlanRequest `json:"-"`
@@ -57,7 +58,7 @@ func stepLabel(st PlanStep) string {
 func (s *toolChanger) plan(
 	ctx context.Context,
 	steps []PlanStep,
-	worldState *referenceframe.WorldState,
+	baseWS *commonpb.WorldState,
 ) (*Plan, error) {
 	fs, err := framesystem.NewFromService(ctx, s.fsService, nil)
 	if err != nil {
@@ -67,6 +68,11 @@ func (s *toolChanger) plan(
 	currentInputs, err := s.arm.CurrentInputs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get arm inputs: %w", err)
+	}
+
+	aggregatorTransforms, err := s.fetchAggregatorTransforms(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fetch world state store transforms: %w", err)
 	}
 
 	startInputs := referenceframe.NewZeroInputs(fs)
@@ -82,9 +88,13 @@ func (s *toolChanger) plan(
 			},
 			nil,
 		)
+		stepWS, err := s.buildStepWorldState(baseWS, aggregatorTransforms, st.AttachedTool)
+		if err != nil {
+			return nil, fmt.Errorf("build world state for step %q: %w", stepLabel(st), err)
+		}
 		req := &armplanning.PlanRequest{
 			FrameSystem: fs,
-			WorldState:  worldState,
+			WorldState:  stepWS,
 			StartState:  startState,
 			Goals:       []*armplanning.PlanState{goalState},
 			Constraints: st.Constraints,
@@ -130,11 +140,7 @@ func (s *toolChanger) execute(ctx context.Context, plan *Plan) error {
 	return nil
 }
 
-// TODO: if motion commands ever need to override the stored world-state for a
-// single call (e.g. a transient obstacle the caller doesn't want to keep), add
-// an optional per-call world-state field that merges with or replaces stored.
-// The current set-once contract stays backwards compatible.
-func parseWorldState(raw interface{}) (*referenceframe.WorldState, error) {
+func parseWorldState(raw interface{}) (*commonpb.WorldState, error) {
 	bytes, err := json.Marshal(raw)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling world-state: %w", err)
@@ -143,5 +149,5 @@ func parseWorldState(raw interface{}) (*referenceframe.WorldState, error) {
 	if err := protojson.Unmarshal(bytes, &proto); err != nil {
 		return nil, fmt.Errorf("unmarshaling world-state: %w", err)
 	}
-	return referenceframe.WorldStateFromProtobuf(&proto)
+	return &proto, nil
 }

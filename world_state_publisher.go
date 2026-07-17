@@ -36,19 +36,24 @@ func (s *toolChanger) removeAttachedTool(ctx context.Context) error {
 	return err
 }
 
-func buildSetTransformPayload(uuid string, tool ToolConfig) (map[string]interface{}, error) {
+func buildAttachedTransform(uuid string, tool ToolConfig) (*commonpb.Transform, error) {
 	geoProto, err := tool.Geometry.ToProtobuf()
 	if err != nil {
 		return nil, fmt.Errorf("tool %q: geometry: %w", tool.Name, err)
 	}
-
-	pose := attachPose(tool)
-	t := &commonpb.Transform{
+	return &commonpb.Transform{
 		ReferenceFrame:      tool.Name,
-		PoseInObserverFrame: &commonpb.PoseInFrame{ReferenceFrame: tool.AttachFrame, Pose: pose},
+		PoseInObserverFrame: &commonpb.PoseInFrame{ReferenceFrame: tool.AttachFrame, Pose: attachPose(tool)},
 		PhysicalObject:      geoProto,
-	}
+		Uuid:                []byte(uuid),
+	}, nil
+}
 
+func buildSetTransformPayload(uuid string, tool ToolConfig) (map[string]interface{}, error) {
+	t, err := buildAttachedTransform(uuid, tool)
+	if err != nil {
+		return nil, err
+	}
 	raw, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(t)
 	if err != nil {
 		return nil, err
@@ -57,6 +62,8 @@ func buildSetTransformPayload(uuid string, tool ToolConfig) (map[string]interfac
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return nil, err
 	}
+	// Uuid appears in the proto marshalling as base64 bytes; overwrite with the
+	// plain string the aggregator expects at the top level.
 	m["uuid"] = uuid
 	return m, nil
 }
