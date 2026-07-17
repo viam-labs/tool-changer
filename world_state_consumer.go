@@ -16,6 +16,9 @@ func (s *toolChanger) fetchAggregatorTransforms(ctx context.Context) ([]*commonp
 	}
 	uuids, err := s.wss.ListUUIDs(ctx, nil)
 	if err != nil {
+		if errors.Is(err, worldstatestore.ErrNilResponse) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	own := s.attachedUUID()
