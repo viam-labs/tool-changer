@@ -480,14 +480,14 @@ func TestReleaseSteps_AttachedToolBeforeDeposit(t *testing.T) {
 
 func TestBuildStepWorldState_NilWhenEmpty(t *testing.T) {
 	s := newTestService()
-	ws, err := s.buildStepWorldState(nil, nil, "")
+	ws, err := s.buildStepObstaclesWorldState(nil, "")
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, ws, test.ShouldBeNil)
 }
 
 func TestBuildStepWorldState_IncludesAttachedTool(t *testing.T) {
 	s := &toolChanger{cfg: &Config{Tools: []ToolConfig{spoonToolWithGeometry()}}, name: resource.NewName(resource.APINamespace("viam").WithType("service").WithSubtype("generic"), "mychanger")}
-	ws, err := s.buildStepWorldState(nil, nil, "spoon")
+	ws, err := s.buildStepObstaclesWorldState(nil, "spoon")
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, ws, test.ShouldNotBeNil)
 	test.That(t, ws.Transforms(), test.ShouldBeEmpty)
@@ -500,27 +500,34 @@ func TestBuildStepWorldState_IncludesAttachedTool(t *testing.T) {
 
 func TestBuildStepWorldState_SkipsAttachedToolWithoutGeometry(t *testing.T) {
 	s := newTestService()
-	ws, err := s.buildStepWorldState(nil, nil, "tongs")
+	ws, err := s.buildStepObstaclesWorldState(nil, "tongs")
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, ws, test.ShouldBeNil)
 }
 
-func TestBuildStepWorldState_MergesAggregatorTransforms(t *testing.T) {
-	s := newTestService()
-	agg := []*commonpb.Transform{
-		{
-			ReferenceFrame: "external",
-			PoseInObserverFrame: &commonpb.PoseInFrame{
-				ReferenceFrame: "world",
-				Pose:           &commonpb.Pose{OZ: 1},
+func TestFetchAggregatorTransforms_ConvertsToLinkInFrames(t *testing.T) {
+	stub := &stubWSS{
+		uuids: [][]byte{[]byte("some-other")},
+		byID: map[string]*commonpb.Transform{
+			"some-other": {
+				ReferenceFrame: "external",
+				PoseInObserverFrame: &commonpb.PoseInFrame{
+					ReferenceFrame: "world",
+					Pose:           &commonpb.Pose{OZ: 1},
+				},
+				Uuid: []byte("some-other"),
 			},
-			Uuid: []byte("some-other"),
 		},
 	}
-	ws, err := s.buildStepWorldState(nil, agg, "")
+	s := &toolChanger{
+		name: resource.NewName(resource.APINamespace("viam").WithType("service").WithSubtype("generic"), "mychanger"),
+		cfg:  validConfig(),
+		wss:  stub,
+	}
+	got, err := s.fetchAggregatorTransforms(context.Background())
 	test.That(t, err, test.ShouldBeNil)
-	test.That(t, ws, test.ShouldNotBeNil)
-	test.That(t, ws.Transforms(), test.ShouldHaveLength, 1)
+	test.That(t, got, test.ShouldHaveLength, 1)
+	test.That(t, got[0].Name(), test.ShouldEqual, "external")
 }
 
 type stubWSS struct {
@@ -544,8 +551,20 @@ func TestFetchAggregatorTransforms_FiltersOwnAttachedUUID(t *testing.T) {
 	stub := &stubWSS{
 		uuids: [][]byte{[]byte("tool-changer/mychanger/attached"), []byte("other-uuid")},
 		byID: map[string]*commonpb.Transform{
-			"tool-changer/mychanger/attached": {ReferenceFrame: "spoon"},
-			"other-uuid":                      {ReferenceFrame: "workpiece"},
+			"tool-changer/mychanger/attached": {
+				ReferenceFrame: "spoon",
+				PoseInObserverFrame: &commonpb.PoseInFrame{
+					ReferenceFrame: "world",
+					Pose:           &commonpb.Pose{OZ: 1},
+				},
+			},
+			"other-uuid": {
+				ReferenceFrame: "workpiece",
+				PoseInObserverFrame: &commonpb.PoseInFrame{
+					ReferenceFrame: "world",
+					Pose:           &commonpb.Pose{OZ: 1},
+				},
+			},
 		},
 	}
 	s := &toolChanger{
@@ -556,7 +575,7 @@ func TestFetchAggregatorTransforms_FiltersOwnAttachedUUID(t *testing.T) {
 	got, err := s.fetchAggregatorTransforms(context.Background())
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, got, test.ShouldHaveLength, 1)
-	test.That(t, got[0].ReferenceFrame, test.ShouldEqual, "workpiece")
+	test.That(t, got[0].Name(), test.ShouldEqual, "workpiece")
 }
 
 func TestFetchAggregatorTransforms_NoStore(t *testing.T) {
