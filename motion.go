@@ -60,7 +60,12 @@ func (s *toolChanger) plan(
 	steps []PlanStep,
 	baseWS *commonpb.WorldState,
 ) (*Plan, error) {
-	fs, err := framesystem.NewFromService(ctx, s.fsService, nil)
+	aggregatorTransforms, err := s.fetchAggregatorTransforms(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fetch world state store transforms: %w", err)
+	}
+
+	fs, err := framesystem.NewFromService(ctx, s.fsService, aggregatorTransforms)
 	if err != nil {
 		return nil, fmt.Errorf("build frame system: %w", err)
 	}
@@ -68,11 +73,6 @@ func (s *toolChanger) plan(
 	currentInputs, err := s.arm.CurrentInputs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get arm inputs: %w", err)
-	}
-
-	aggregatorTransforms, err := s.fetchAggregatorTransforms(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("fetch world state store transforms: %w", err)
 	}
 
 	startInputs := referenceframe.NewZeroInputs(fs)
@@ -88,16 +88,20 @@ func (s *toolChanger) plan(
 			},
 			nil,
 		)
-		stepWS, err := s.buildStepWorldState(baseWS, aggregatorTransforms, st.AttachedTool)
+		stepObstaclesWS, err := s.buildStepObstaclesWorldState(baseWS, st.AttachedTool)
 		if err != nil {
 			return nil, fmt.Errorf("build world state for step %q: %w", stepLabel(st), err)
 		}
+		obstaclesInWorldFrame, err := stepObstaclesWS.ObstaclesInWorldFrame(fs, startState.Configuration())
+		if err != nil {
+			return nil, fmt.Errorf("transform obstacles to world frame for step %q: %w", stepLabel(st), err)
+		}
 		req := &armplanning.PlanRequest{
-			FrameSystem: fs,
-			WorldState:  stepWS,
-			StartState:  startState,
-			Goals:       []*armplanning.PlanState{goalState},
-			Constraints: st.Constraints,
+			FrameSystem:           fs,
+			ObstaclesInWorldFrame: obstaclesInWorldFrame,
+			StartState:            startState,
+			Goals:                 []*armplanning.PlanState{goalState},
+			Constraints:           st.Constraints,
 		}
 		planStart := time.Now()
 		p, _, err := armplanning.PlanMotion(ctx, s.logger, req)

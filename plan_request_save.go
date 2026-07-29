@@ -16,12 +16,12 @@ func newPlanRequestForSaving(req *armplanning.PlanRequest) *armplanning.PlanRequ
 		return nil
 	}
 	return &armplanning.PlanRequest{
-		FrameSystem:    req.FrameSystem,
-		WorldState:     req.WorldState,
-		Goals:          req.Goals,
-		StartState:     req.StartState,
-		Constraints:    req.Constraints,
-		PlannerOptions: req.PlannerOptions,
+		FrameSystem:           req.FrameSystem,
+		ObstaclesInWorldFrame: req.ObstaclesInWorldFrame,
+		Goals:                 req.Goals,
+		StartState:            req.StartState,
+		Constraints:           req.Constraints,
+		PlannerOptions:        req.PlannerOptions,
 	}
 }
 

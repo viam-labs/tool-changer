@@ -12,7 +12,7 @@ import (
 	"go.viam.com/rdk/spatialmath"
 )
 
-func (s *toolChanger) fetchAggregatorTransforms(ctx context.Context) ([]*commonpb.Transform, error) {
+func (s *toolChanger) fetchAggregatorTransforms(ctx context.Context) ([]*referenceframe.LinkInFrame, error) {
 	if s.wss == nil {
 		return nil, nil
 	}
@@ -30,7 +30,7 @@ func (s *toolChanger) fetchAggregatorTransforms(ctx context.Context) ([]*commonp
 		return nil, err
 	}
 	own := s.attachedUUID()
-	out := make([]*commonpb.Transform, 0, len(uuids))
+	var protoTransforms []*commonpb.Transform
 	for _, u := range uuids {
 		if string(u) == own {
 			continue
@@ -42,22 +42,23 @@ func (s *toolChanger) fetchAggregatorTransforms(ctx context.Context) ([]*commonp
 			}
 			return nil, fmt.Errorf("get transform %q: %w", string(u), err)
 		}
-		out = append(out, t)
+		protoTransforms = append(protoTransforms, t)
+	}
+	out, err := referenceframe.LinkInFramesFromTransformsProtobuf(protoTransforms)
+	if err != nil {
+		return nil, fmt.Errorf("convert transforms: %w", err)
 	}
 	return out, nil
 }
 
-func (s *toolChanger) buildStepWorldState(
+func (s *toolChanger) buildStepObstaclesWorldState(
 	base *commonpb.WorldState,
-	aggregator []*commonpb.Transform,
 	attachedTool string,
 ) (*referenceframe.WorldState, error) {
 	merged := &commonpb.WorldState{}
 	if base != nil {
 		merged.Obstacles = append(merged.Obstacles, base.Obstacles...)
-		merged.Transforms = append(merged.Transforms, base.Transforms...)
 	}
-	merged.Transforms = append(merged.Transforms, aggregator...)
 
 	if attachedTool != "" {
 		tool := s.findTool(attachedTool)
@@ -70,7 +71,7 @@ func (s *toolChanger) buildStepWorldState(
 		}
 	}
 
-	if len(merged.Obstacles) == 0 && len(merged.Transforms) == 0 {
+	if len(merged.Obstacles) == 0 {
 		return nil, nil
 	}
 	return referenceframe.WorldStateFromProtobuf(merged)
