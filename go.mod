@@ -5,7 +5,7 @@ go 1.26.10
 require (
 	github.com/erh/vmodutils v0.3.11
 	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
-	go.viam.com/api v0.1.607
+	go.viam.com/api v0.1.610
 	go.viam.com/rdk v1.17.0
 	go.viam.com/test v1.2.5
 	google.golang.org/protobuf v1.36.12
